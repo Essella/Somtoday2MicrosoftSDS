@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Generated local build and IDE state is never published"
+paths = [
+  '''(^|/|\\)\.vs(/|\\)''',
+  '''(^|/|\\)(bin|obj|artifacts)(/|\\)'''
+]

@@ -1,0 +1,111 @@
+name: Somtoday2MicrosoftSDS CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Somtoday2MicrosoftSDS.sln
+
+      - name: Test
+        run: dotnet test Somtoday2MicrosoftSDS.sln --configuration Release --no-restore
+
+  container-and-infra:
+    name: Container and Bicep
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build smoke-test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: somtoday2microsoftsds:ci
+          build-args: |
+            VERSION=0.0.0.0
+            REVISION=${{ github.sha }}
+
+      - name: Verify non-root image
+        shell: bash
+        env:
+          EXPECTED_REVISION: ${{ github.sha }}
+        run: |
+          test "$(docker image inspect somtoday2microsoftsds:ci --format '{{.Config.User}}')" = "1654"
+          test "$(docker image inspect somtoday2microsoftsds:ci --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "AGPL-3.0-or-later"
+          test "$(docker image inspect somtoday2microsoftsds:ci --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "0.0.0.0"
+          test "$(docker image inspect somtoday2microsoftsds:ci --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$EXPECTED_REVISION"
+          test "$(docker image inspect somtoday2microsoftsds:ci --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/Essella/Somtoday2MicrosoftSDS"
+
+      - name: Verify missing configuration fails fast
+        shell: bash
+        run: |
+          set +e
+          timeout 30s docker run --rm somtoday2microsoftsds:ci
+          status=$?
+          set -e
+          if [ "$status" -ne 1 ]; then
+            echo "Expected exit code 1 for missing Production configuration, received $status"
+            exit 1
+          fi
+
+      - name: Verify SIGTERM cancels an in-flight Blob request
+        shell: bash
+        run: |
+          python3 -c 'import socket,time; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(("0.0.0.0",10000)); s.listen(); c,_=s.accept(); time.sleep(60)' &
+          blackhole_pid=$!
+          container_name=somtoday2microsoftsds-sigterm
+          trap 'docker rm -f "$container_name" >/dev/null 2>&1 || true; kill "$blackhole_pid" 2>/dev/null || true' EXIT
+
+          docker run --detach \
+            --name "$container_name" \
+            --add-host host.docker.internal:host-gateway \
+            --env DOTNET_ENVIRONMENT=Development \
+            --env Somtoday__ClientId=test-client \
+            --env Somtoday__ClientSecret=test-secret \
+            --env Somtoday__SchoolUUID__0=11111111-1111-1111-1111-111111111111 \
+            --env 'Storage__AzureBlob__ConnectionString=DefaultEndpointsProtocol=http;AccountName=test;AccountKey=YWJjZA==;BlobEndpoint=http://host.docker.internal:10000/test;' \
+            somtoday2microsoftsds:ci
+
+          sleep 2
+          test "$(docker inspect "$container_name" --format '{{.State.Running}}')" = "true"
+          docker stop --time 10 "$container_name"
+          test "$(docker inspect "$container_name" --format '{{.State.ExitCode}}')" = "1"
+
+      - name: Validate Bicep
+        run: |
+          az bicep build --file infra/main.bicep --outfile "${{ runner.temp }}/main.json"
+          az bicep build-params --file infra/main.example.bicepparam --outfile "${{ runner.temp }}/main.parameters.json"
+
+          jq --sort-keys 'del(.metadata._generator)' "${{ runner.temp }}/main.json" > "${{ runner.temp }}/main.canonical.json"
+          jq --sort-keys 'del(.metadata._generator)' infra/azuredeploy.json > "${{ runner.temp }}/azuredeploy.canonical.json"
+          diff --unified "${{ runner.temp }}/main.canonical.json" "${{ runner.temp }}/azuredeploy.canonical.json"

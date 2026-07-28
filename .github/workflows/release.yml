@@ -1,0 +1,201 @@
+name: Release Somtoday2MicrosoftSDS
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+jobs:
+  version:
+    name: Validate version
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      archive_name: ${{ steps.version.outputs.archive_name }}
+
+    steps:
+      - name: Validate and extract release version
+        id: version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $tag = $env:RELEASE_TAG
+          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+\.\d+)$') {
+            throw "Release tag '$tag' is invalid. Use v1.2.3.4."
+          }
+
+          $version = [Version]$Matches.version
+          if ($version.Major -gt 65534 -or
+              $version.Minor -gt 65534 -or
+              $version.Build -gt 65534 -or
+              $version.Revision -gt 65534) {
+            throw "Every version component must be between 0 and 65534."
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "archive_name=Somtoday2MicrosoftSDS-v$version-win-x64.zip" >> $env:GITHUB_OUTPUT
+
+  redistribution-gate:
+    name: Verify OpenAPI redistribution approval
+    runs-on: ubuntu-latest
+    permissions: {}
+
+    steps:
+      - name: Require documented redistribution rights
+        shell: bash
+        env:
+          RIGHTS_CONFIRMED: ${{ vars.OPENAPI_REDISTRIBUTION_CONFIRMED }}
+        run: |
+          if [ "$RIGHTS_CONFIRMED" != "true" ]; then
+            echo "Release blocked: confirm the redistribution rights for the Somtoday OpenAPI specification and generated client code, then set repository variable OPENAPI_REDISTRIBUTION_CONFIRMED=true."
+            exit 1
+          fi
+
+  test:
+    name: Test release (${{ matrix.os }})
+    needs: [version, redistribution-gate]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore Somtoday2MicrosoftSDS.sln
+
+      - name: Test release build
+        run: >-
+          dotnet test Somtoday2MicrosoftSDS.sln
+          --configuration Release
+          --no-restore
+          -p:Version=${{ needs.version.outputs.version }}
+          -p:AssemblyVersion=${{ needs.version.outputs.version }}
+          -p:FileVersion=${{ needs.version.outputs.version }}
+          -p:InformationalVersion=${{ needs.version.outputs.version }}
+          -p:ContinuousIntegrationBuild=true
+
+  windows-archive:
+    name: Publish Windows archive
+    needs: [version, test]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish Windows application
+        run: >-
+          dotnet publish Somtoday2MicrosoftSDS/Somtoday2MicrosoftSDS.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained false
+          --output artifacts/publish
+          -p:Version=${{ needs.version.outputs.version }}
+          -p:AssemblyVersion=${{ needs.version.outputs.version }}
+          -p:FileVersion=${{ needs.version.outputs.version }}
+          -p:InformationalVersion=${{ needs.version.outputs.version }}
+          -p:ContinuousIntegrationBuild=true
+
+      - name: Create release archive
+        shell: pwsh
+        env:
+          ARCHIVE_NAME: ${{ needs.version.outputs.archive_name }}
+        run: |
+          Compress-Archive `
+            -Path 'artifacts/publish/*' `
+            -DestinationPath "artifacts/$env:ARCHIVE_NAME"
+
+      - name: Upload archive to GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          ARCHIVE_NAME: ${{ needs.version.outputs.archive_name }}
+        run: >-
+          gh release upload
+          $env:RELEASE_TAG
+          "artifacts/$env:ARCHIVE_NAME"
+          --clobber
+
+  container-image:
+    name: Publish container image
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    env:
+      IMAGE_NAME: ghcr.io/essella/somtoday2microsoftsds
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ needs.version.outputs.version }}
+            type=sha,format=short
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/Essella/Somtoday2MicrosoftSDS
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          sbom: true
+          provenance: false
+          build-args: |
+            VERSION=${{ needs.version.outputs.version }}
+            REVISION=${{ github.sha }}
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
