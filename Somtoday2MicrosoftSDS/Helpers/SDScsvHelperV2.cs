@@ -7,10 +7,12 @@ namespace Somtoday2MicrosoftSDS.Helpers
     {
         private readonly SettingsHelper sh = new SettingsHelper();
         private readonly VestigingModel vestigingModel;
+        private readonly DateOnly runDate;
 
-        public SDScsvHelperV2(VestigingModel info)
+        public SDScsvHelperV2(VestigingModel info, DateOnly runDate)
         {
             vestigingModel = info;
+            this.runDate = runDate;
         }
 
         internal SDScsvV2 ConvertToSDSCSV()
@@ -46,7 +48,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 foreach (Guid leerling in ouder.Leerlingen_van_vestiging)
                 {
                     // Heeft deze ouder een gekoppelde leerling?
-                    if (leerlingIds.Contains(leerling) && !string.IsNullOrEmpty(ouder.Emailadres))
+                    if (leerlingIds.Contains(leerling) && GuardianExportPolicy.IsExportable(ouder))
                     {
                         relationships.Add(new Relationships
                         {
@@ -66,8 +68,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
             List<Classes> classes = [];
             List<Enrollments> enrollments = [];
 
-            DateTime now = DateTime.Now;
-            string currentSchoolyear = now.Month < 8 ? $"{now.Year - 1}-{now.Year}" : $"{now.Year}-{now.Year + 1}";
+            string currentSchoolyear = AmsterdamTimeHelper.GetSchoolYear(runDate);
             HashSet<Guid> medewerkerIds = vestigingModel.Medewerkers.Select(m => m.Uuid).ToHashSet();
             HashSet<Guid> leerlingIds = vestigingModel.Leerlingen.Select(s => s.Uuid).ToHashSet();
             string vestigingsAfkorting = vestigingModel.Vestiging.Afkorting;
@@ -147,7 +148,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
 
             foreach (OuderVerzorger ov in vestigingModel.OuderVerzorgers)
             {
-                if (!string.IsNullOrEmpty(ov.Emailadres))
+                if (GuardianExportPolicy.IsExportable(ov))
                 {
                     result.Add(new Roles
                     {
@@ -184,13 +185,16 @@ namespace Somtoday2MicrosoftSDS.Helpers
 
             foreach (OuderVerzorger ov in vestigingModel.OuderVerzorgers)
             {
-                if (!string.IsNullOrEmpty(ov.Emailadres))
+                if (GuardianExportPolicy.IsExportable(ov))
                 {
                     result.Add(new Users
                     {
                         username = ov.Emailadres,
                         sourcedId = ov.Uuid.ToString(),
-                        phone = BusinessLogicHelper.NormaliseerTelefoonnummerNaarE164(ov.Telefoonnummer)
+                        givenName = ov.Voorletters ?? string.Empty,
+                        familyName = GuardianExportPolicy.GetFamilyName(ov),
+                        email = ov.Emailadres,
+                        phone = GuardianExportPolicy.GetPhone(ov)
                     });
                 }
             }

@@ -1,11 +1,11 @@
 # Known implementation deviations
 
-This register is the single source for known differences between confirmed intent and current implementation. The **Current behavior** column contains code-observed facts; the linked contract contains confirmed intent. IDs are stable: do not reuse or renumber them. A deviation is a known implementation gap, not an unanswered requirement.
+This register is the single source for known differences between confirmed intent and current implementation. The **Current behavior** column contains code-observed facts; the linked contract contains confirmed intent. IDs are stable: do not reuse or renumber them. A deviation is a known implementation gap, not an unanswered requirement. Resolved IDs remain recorded separately and must not be reused.
+
+## Active deviations
 
 | ID | Area | Current behavior | Intended reference |
 |---|---|---|---|
-| `DEV-001` | Release | The workflow creates and publishes a framework-dependent Windows archive. | [Core supported runtime](PROJECT_CORE.md#purpose-and-scope), [release guide](operations/RELEASES.md#supported-artifact) |
-| `DEV-002` | Release | The workflow blocks releases unless `OPENAPI_REDISTRIBUTION_CONFIRMED=true`, although no additional approval is required. | [Release guide](operations/RELEASES.md#supported-artifact) |
 | `DEV-003` | Output layout | Output always uses `{OutputPrefix}/{SanitizedInstitutionAbbreviation}/{SanitizedLocationAbbreviation}/v1|v2/{FileName}`; the two layout settings and location-only collision rule are absent. | [Publication grouping](contracts/PUBLICATION.md#output-grouping) |
 | `DEV-004` | Institution naming | Institution discovery uses the authenticated configured environment instead of the public production institution endpoint. | [Institution abbreviation source](contracts/PUBLICATION.md#institution-abbreviation-source) |
 | `DEV-005` | Source availability | A selected location is omitted unless groups, employees, and pupils are all non-empty; guardian-enabled runs also require a guardian. | [Export availability](contracts/EXPORT.md#dataset-formats-and-availability) |
@@ -13,10 +13,17 @@ This register is the single source for known differences between confirmed inten
 | `DEV-007` | Guardian file lifecycle | Disabling guardian sync does not remove prior guardian files; enabled sync skips empty guardian files instead of replacing them with header-only files. | [Guardian file lifecycle](contracts/PUBLICATION.md#guardian-file-lifecycle) |
 | `DEV-008` | V2 population | V2 exports every downloaded employee and pupil as a user/role, including people without an included class. | [Class and person population](contracts/EXPORT.md#class-and-person-population) |
 | `DEV-009` | Class eligibility | Both converters test source references before resolving them, so a class can be emitted without both an exported teacher and exported pupil. | [Class and person population](contracts/EXPORT.md#class-and-person-population) |
-| `DEV-010` | Time | School-year and July 31 logic use the process-local clock; the supplied Linux container normally uses UTC. | [Core invariant](PROJECT_CORE.md#key-invariants), [export availability](contracts/EXPORT.md#dataset-formats-and-availability) |
-| `DEV-011` | V2 guardians | V2 guardian users omit `givenName`, `familyName`, and `email`. | [Guardian mapping](contracts/EXPORT.md#guardian-inclusion-and-mapping) |
-| `DEV-012` | V1 guardians | With a prefix, V1 places prefix plus surname in `First Name` and omits the prefix from `Last Name`. | [Guardian mapping](contracts/EXPORT.md#guardian-inclusion-and-mapping) |
-| `DEV-013` | Guardian consent and phone privacy | Both converters include guardians based on a non-empty email address without checking `WenstContactViaEMail`. They normalize the fallback phone directly without applying the confirmed secret-number suppression or mobile/home/work preference. | [Guardian mapping](contracts/EXPORT.md#guardian-inclusion-and-mapping) |
+
+## Resolved deviations
+
+| ID | Resolved | Resolution |
+|---|---|---|
+| `DEV-001` | 2026-07-30 | The release workflow publishes only the supported `linux/amd64` container image and no Windows archive. |
+| `DEV-002` | 2026-07-30 | Releases no longer depend on the `OPENAPI_REDISTRIBUTION_CONFIRMED` repository variable. |
+| `DEV-010` | 2026-07-30 | Each run captures one `Europe/Amsterdam` date for the July 31 trigger and both converters' school-year calculation. |
+| `DEV-011` | 2026-07-30 | V2.1 guardian users include the confirmed given name, family name, and email mappings. |
+| `DEV-012` | 2026-07-30 | V1 guardian first and last names follow the confirmed initials and joined-prefix mapping. |
+| `DEV-013` | 2026-07-30 | Both converters share consent, email, phone-preference, normalization, and secret-number filtering rules. |
 
 ### DEV-004 verification
 

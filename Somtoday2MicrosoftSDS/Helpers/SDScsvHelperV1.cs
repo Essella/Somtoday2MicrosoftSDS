@@ -6,10 +6,12 @@ namespace Somtoday2MicrosoftSDS.Helpers
     {
         private readonly SettingsHelper sh = new SettingsHelper();
         private readonly VestigingModel vestigingModel;
+        private readonly DateOnly runDate;
 
-        public SDScsvHelperV1(VestigingModel info)
+        public SDScsvHelperV1(VestigingModel info, DateOnly runDate)
         {
             vestigingModel = info;
+            this.runDate = runDate;
         }
 
         internal SDScsvV1 ConvertToSDSCSV()
@@ -43,14 +45,14 @@ namespace Somtoday2MicrosoftSDS.Helpers
 
             foreach (OuderVerzorger ouder in vestigingModel.OuderVerzorgers)
             {
-                if (ouder.Leerlingen_van_vestiging?.Count > 0)
+                if (GuardianExportPolicy.IsExportable(ouder) && ouder.Leerlingen_van_vestiging?.Count > 0)
                 {
                     bool guardianFound = false;
 
                     foreach (Guid leerling in ouder.Leerlingen_van_vestiging)
                     {
                         string leerlingId = leerling.ToString();
-                        if (studentIds.Contains(leerlingId) && !string.IsNullOrEmpty(ouder.Emailadres))
+                        if (studentIds.Contains(leerlingId))
                         {
                             guardianFound = true;
                             guardianrelationships.Add(new GuardianRelationship
@@ -67,9 +69,9 @@ namespace Somtoday2MicrosoftSDS.Helpers
                         {
                             SISid = ouder.Uuid.ToString(),
                             Email = ouder.Emailadres,
-                            FirstName = string.IsNullOrEmpty(ouder.Voorvoegsel) ? (!string.IsNullOrEmpty(ouder.Voorletters) ? ouder.Voorletters : ".") : $"{ouder.Voorvoegsel} {ouder.Achternaam}",
-                            Phone = string.IsNullOrEmpty(ouder.Telefoonnummer) ? string.Empty : BusinessLogicHelper.NormaliseerTelefoonnummerNaarE164(ouder.Telefoonnummer),
-                            LastName = ouder.Achternaam
+                            FirstName = ouder.Voorletters ?? string.Empty,
+                            Phone = GuardianExportPolicy.GetPhone(ouder),
+                            LastName = GuardianExportPolicy.GetFamilyName(ouder)
                         });
                     }
                 }
@@ -80,8 +82,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
 
         private (List<Section> Sections, List<Teacher> Teachers, List<Student> Students, List<TeacherRoster> TeacherRoster, List<StudentEnrollment> StudentEnrollments) GetClassesAndEnrollments()
         {
-            DateTime now = DateTime.Now;
-            string currentSchoolyear = now.Month < 8 ? $"{now.Year - 1}-{now.Year}" : $"{now.Year}-{now.Year + 1}";
+            string currentSchoolyear = AmsterdamTimeHelper.GetSchoolYear(runDate);
             List<Section> sections = [];
             List<Teacher> teachers = [];
             List<Student> students = [];

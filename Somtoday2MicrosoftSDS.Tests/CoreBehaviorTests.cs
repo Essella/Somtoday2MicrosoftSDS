@@ -267,7 +267,48 @@ public class CoreBehaviorTests
     public void EmptyCsvModeUsesArgumentOrFixedYearEnd(string argument, int month, int day, bool expected)
     {
         string[] args = string.IsNullOrEmpty(argument) ? [] : [argument];
-        Assert.Equal(expected, Program.ShouldGenerateEmptyCsv(args, false, new DateTime(2026, month, day)));
+        Assert.Equal(expected, Program.ShouldGenerateEmptyCsv(args, false, new DateOnly(2026, month, day)));
+    }
+
+    [Theory]
+    [InlineData(2026, 7, 30, 22, 30, 2026, 7, 31)]
+    [InlineData(2026, 12, 31, 23, 30, 2027, 1, 1)]
+    public void AmsterdamDateUsesCetAndCestAtLocalMidnight(
+        int utcYear,
+        int utcMonth,
+        int utcDay,
+        int utcHour,
+        int utcMinute,
+        int expectedYear,
+        int expectedMonth,
+        int expectedDay)
+    {
+        DateTimeOffset instant = new(
+            utcYear,
+            utcMonth,
+            utcDay,
+            utcHour,
+            utcMinute,
+            0,
+            TimeSpan.Zero);
+
+        Assert.Equal(
+            new DateOnly(expectedYear, expectedMonth, expectedDay),
+            AmsterdamTimeHelper.GetDate(instant));
+    }
+
+    [Fact]
+    public void AmsterdamSchoolYearChangesAtLocalAugustFirst()
+    {
+        DateOnly beforeBoundary = AmsterdamTimeHelper.GetDate(
+            new DateTimeOffset(2026, 7, 31, 21, 59, 0, TimeSpan.Zero));
+        DateOnly atBoundary = AmsterdamTimeHelper.GetDate(
+            new DateTimeOffset(2026, 7, 31, 22, 0, 0, TimeSpan.Zero));
+
+        Assert.Equal(new DateOnly(2026, 7, 31), beforeBoundary);
+        Assert.Equal("2025-2026", AmsterdamTimeHelper.GetSchoolYear(beforeBoundary));
+        Assert.Equal(new DateOnly(2026, 8, 1), atBoundary);
+        Assert.Equal("2026-2027", AmsterdamTimeHelper.GetSchoolYear(atBoundary));
     }
 
     private static IConfiguration CreateConfiguration(Dictionary<string, string> overrides)

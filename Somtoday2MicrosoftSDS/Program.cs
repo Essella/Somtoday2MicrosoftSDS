@@ -19,7 +19,7 @@ namespace Somtoday2MicrosoftSDS
             OpenAPIHelper Api,
             List<Vestiging> Locations);
 
-        internal static bool ShouldGenerateEmptyCsv(string[] args, bool configuredGenerateEmptyCsv, DateTime today)
+        internal static bool ShouldGenerateEmptyCsv(string[] args, bool configuredGenerateEmptyCsv, DateOnly today)
         {
             bool requestedByArgument = args.Any(arg => string.Equals(arg, "--empty-csv", StringComparison.OrdinalIgnoreCase));
             bool isYearEnd = today.Month == 7 && today.Day == 31;
@@ -46,6 +46,7 @@ namespace Somtoday2MicrosoftSDS
 
             try
             {
+                DateOnly runDate = AmsterdamTimeHelper.GetDate(TimeProvider.System.GetUtcNow());
                 _logger.LogInformation(
                     "Application starting with version: {Version}",
                     System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString());
@@ -82,7 +83,7 @@ namespace Somtoday2MicrosoftSDS
                     return 1;
                 }
 
-                bool generateEmptyCsv = ShouldGenerateEmptyCsv(args, configuration.GenerateEmptyCsv, DateTime.Today);
+                bool generateEmptyCsv = ShouldGenerateEmptyCsv(args, configuration.GenerateEmptyCsv, runDate);
                 BlobContainerClient containerClient = BlobClientFactory.CreateContainerClient(configuration);
                 await fileHelper.EnsureContainerExistsAsync(containerClient, cancellationToken);
                 _logger.LogInformation(
@@ -143,6 +144,7 @@ namespace Somtoday2MicrosoftSDS
                                 configuration,
                                 fileHelper,
                                 containerClient,
+                                runDate,
                                 cancellationToken);
                         }
 
@@ -306,6 +308,7 @@ namespace Somtoday2MicrosoftSDS
             SyncConfiguration configuration,
             FileHelper fileHelper,
             BlobContainerClient containerClient,
+            DateOnly runDate,
             CancellationToken cancellationToken)
         {
             List<VestigingModel> allInfo = await school.Api.DownloadAllInfoAsync(
@@ -329,12 +332,12 @@ namespace Somtoday2MicrosoftSDS
                     info.OuderVerzorgers.Count);
 
                 await fileHelper.SaveV1ToBlobAsync(
-                    new SDScsvHelperV1(info).ConvertToSDSCSV(),
+                    new SDScsvHelperV1(info, runDate).ConvertToSDSCSV(),
                     containerClient,
                     v1Prefix,
                     cancellationToken);
                 await fileHelper.SaveV2ToBlobAsync(
-                    new SDScsvHelperV2(info).ConvertToSDSCSV(),
+                    new SDScsvHelperV2(info, runDate).ConvertToSDSCSV(),
                     containerClient,
                     v2Prefix,
                     cancellationToken);

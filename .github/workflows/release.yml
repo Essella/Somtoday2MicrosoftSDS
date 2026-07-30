@@ -13,7 +13,6 @@ jobs:
     permissions: {}
     outputs:
       version: ${{ steps.version.outputs.version }}
-      archive_name: ${{ steps.version.outputs.archive_name }}
 
     steps:
       - name: Validate and extract release version
@@ -36,27 +35,10 @@ jobs:
           }
 
           "version=$version" >> $env:GITHUB_OUTPUT
-          "archive_name=Somtoday2MicrosoftSDS-v$version-win-x64.zip" >> $env:GITHUB_OUTPUT
-
-  redistribution-gate:
-    name: Verify OpenAPI redistribution approval
-    runs-on: ubuntu-latest
-    permissions: {}
-
-    steps:
-      - name: Require documented redistribution rights
-        shell: bash
-        env:
-          RIGHTS_CONFIRMED: ${{ vars.OPENAPI_REDISTRIBUTION_CONFIRMED }}
-        run: |
-          if [ "$RIGHTS_CONFIRMED" != "true" ]; then
-            echo "Release blocked: confirm the redistribution rights for the Somtoday OpenAPI specification and generated client code, then set repository variable OPENAPI_REDISTRIBUTION_CONFIRMED=true."
-            exit 1
-          fi
 
   test:
     name: Test release (${{ matrix.os }})
-    needs: [version, redistribution-gate]
+    needs: version
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -87,56 +69,6 @@ jobs:
           -p:FileVersion=${{ needs.version.outputs.version }}
           -p:InformationalVersion=${{ needs.version.outputs.version }}
           -p:ContinuousIntegrationBuild=true
-
-  windows-archive:
-    name: Publish Windows archive
-    needs: [version, test]
-    runs-on: windows-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout release tag
-        uses: actions/checkout@v7
-
-      - name: Setup .NET 10
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Publish Windows application
-        run: >-
-          dotnet publish Somtoday2MicrosoftSDS/Somtoday2MicrosoftSDS.csproj
-          --configuration Release
-          --runtime win-x64
-          --self-contained false
-          --output artifacts/publish
-          -p:Version=${{ needs.version.outputs.version }}
-          -p:AssemblyVersion=${{ needs.version.outputs.version }}
-          -p:FileVersion=${{ needs.version.outputs.version }}
-          -p:InformationalVersion=${{ needs.version.outputs.version }}
-          -p:ContinuousIntegrationBuild=true
-
-      - name: Create release archive
-        shell: pwsh
-        env:
-          ARCHIVE_NAME: ${{ needs.version.outputs.archive_name }}
-        run: |
-          Compress-Archive `
-            -Path 'artifacts/publish/*' `
-            -DestinationPath "artifacts/$env:ARCHIVE_NAME"
-
-      - name: Upload archive to GitHub Release
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          ARCHIVE_NAME: ${{ needs.version.outputs.archive_name }}
-        run: >-
-          gh release upload
-          $env:RELEASE_TAG
-          "artifacts/$env:ARCHIVE_NAME"
-          --clobber
 
   container-image:
     name: Publish container image

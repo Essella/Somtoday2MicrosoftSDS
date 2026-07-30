@@ -52,4 +52,4 @@ The transformer does not retrieve missing entities and does not independently va
 
 ## Current implementation references
 
-See `DEV-005`, `DEV-008`, `DEV-009`, `DEV-010`, `DEV-011`, `DEV-012`, and `DEV-013` in [the deviation register](../DEVIATIONS.md).
+See `DEV-005`, `DEV-008`, and `DEV-009` in [the deviation register](../DEVIATIONS.md).

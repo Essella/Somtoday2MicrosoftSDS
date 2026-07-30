@@ -42,7 +42,7 @@ The project owner generated `OpenAPIs/openapi.cs` with Visual Studio from the tr
 
 `SDScsvHelperV1` and `SDScsvHelperV2` map location aggregates and username rules into in-memory CSV record collections. Detailed intended mapping is in the [export contract](contracts/EXPORT.md).
 
-- **Inputs:** One `VestigingModel` and the process-global username formatters.
+- **Inputs:** One `VestigingModel`, the run's captured Amsterdam date, and the process-global username formatters.
 - **Output:** In-memory V1 or V2.1 CSV model collections.
 - **Boundary:** Does not retrieve missing entities, perform external I/O, or validate the finished dataset against an external SDS service.
 
@@ -68,7 +68,7 @@ Infrastructure does not provision Somtoday access, a Microsoft SDS ingestion con
 4. `BlobClientFactory` creates a container client and `FileHelper` creates the container if needed.
 5. For each configured institution UUID, the process authenticates and selects locations.
 6. Locations within an institution and institutions themselves are processed sequentially. Group, employee, pupil, and optional guardian requests run concurrently within one location.
-7. V1 and V2 helpers construct in-memory record collections.
+7. V1 and V2 helpers construct in-memory record collections using the same captured Amsterdam date and guardian export policy.
 8. `FileHelper` serializes UTF-8 CSV without a byte-order mark and currently uploads each file with overwrite enabled.
 9. The process returns `0` only when no institution was recorded as failed; configuration, cancellation, secret, storage, discovery, or recorded institution failures return `1`.
 
@@ -80,14 +80,13 @@ Infrastructure does not provision Somtoday access, a Microsoft SDS ingestion con
 - Institution and location abbreviations must remain non-empty after normalization. Slash and backslash become `_`, and paths are compared case-insensitively.
 - Current case-insensitive institution-folder collisions and same-institution location-folder collisions fail the affected institution.
 - Normal mode emits both SDS versions for every location aggregate accepted by `OpenAPIHelper`; no configuration switch selects only one version.
-- Class identifiers currently combine a normalized group/location-derived name with a school-year suffix based on an August boundary.
+- Class identifiers currently combine a normalized group/location-derived name with a school-year suffix based on the run's Amsterdam date and an August boundary.
 - Non-storage failure in one institution does not prevent later institutions from being attempted, but any recorded institution failure makes the process exit with `1`.
 - Authentication bodies, tokens, secrets, API bodies, and raw exception messages are excluded from application error summaries by current tests.
 - Cancellation flows through retries, HTTP, Key Vault, and Blob operations and results in exit code `1`.
 - The username formatter accepts every public property on the generated `Medewerker` or `Leerling` model. The types include unsuitable or sensitive fields, and their property sets differ.
 - Examples of exposed but unsuitable or sensitive properties include BSN/ECK identifiers, dates, phone numbers, and nested objects.
 - Composite username text must currently start with `{user.` and end with `}` or normalization treats the entire value as one property. Tests do not yet define every supported Dynamic LINQ operation, null case, or casing result.
-- V1 currently maps `OuderVerzorger.Emailadres` to guardian and guardian-relationship email. V2 currently maps it to guardian `username`, matching the confirmed username source, but does not populate the separate V2 email field. See `DEV-011` and `DEV-013`.
 
 ## Known deviations
 

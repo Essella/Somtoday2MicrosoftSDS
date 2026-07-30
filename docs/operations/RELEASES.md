@@ -12,8 +12,6 @@ The current container workflow targets `linux/amd64`, requests an SBOM attestati
 
 The project owner generated the tracked client code with Visual Studio and confirms that no additional redistribution approval is required. The repository is new and has never contained a committed secret; a full-history secret scan is not a release prerequisite.
 
-Current workflow mismatches are `DEV-001` and `DEV-002` in [the deviation register](../DEVIATIONS.md).
-
 ## Versioning and tags
 
 Create a GitHub Release with a four-part tag such as `v1.2.3.4`. Every component must be between 0 and 65534. The release version is used for application metadata and the container tag. The workflow also publishes `sha-COMMIT` and `latest` tags.
