@@ -1,6 +1,6 @@
 # Third-party notices
 
-Somtoday2MicrosoftSDS incorporates the following direct runtime dependencies. Version numbers reflect the project file; a release SBOM records the complete resolved dependency graph for that release.
+Somtoday2MicrosoftSDS incorporates the following direct runtime dependencies. Version numbers reflect the project file. The current release workflow requests a digest-specific SBOM attestation for the container image. The source-of-truth relationship between build inputs, that SBOM, and licensing information is defined by the [dependency inventory authority policy](docs/operations/RELEASES.md#dependency-inventory-authority).
 
 | Component | Version | License | Copyright / project |
 |---|---:|---|---|
@@ -12,7 +12,7 @@ Somtoday2MicrosoftSDS incorporates the following direct runtime dependencies. Ve
 | System.Linq.Dynamic.Core | 1.7.2 | Apache-2.0 | Copyright ZZZ Projects; [Dynamic LINQ](https://dynamic-linq.net/) |
 | Microsoft.Extensions packages and .NET runtime | 10.0 | MIT | Microsoft Corporation; [.NET](https://github.com/dotnet/runtime) |
 
-The container also includes packages from the official .NET Linux runtime base image. Their licenses and source information are published with the [.NET container images](https://github.com/dotnet/dotnet-docker). The generated release SBOM is the authoritative inventory for a particular image digest.
+The container also includes packages from the official .NET Linux runtime base image. Their licenses and source information are published with the [.NET container images](https://github.com/dotnet/dotnet-docker). A generated release SBOM supplies additional digest-specific inventory information.
 
 ## MIT License text
 
