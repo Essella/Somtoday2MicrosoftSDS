@@ -6,7 +6,7 @@ Thank you for contributing to Somtoday2MicrosoftSDS.
 
 Open an issue first for substantial behavioral or public-configuration changes. Keep pull requests focused and explain the operational and privacy impact. By submitting a contribution, you agree that it is licensed under `AGPL-3.0-or-later` and that you have the right to contribute it on those terms.
 
-Do not submit credentials, access tokens, storage connection strings, personal data or production CSV files. Do not update the Somtoday OpenAPI specification or generated client without documenting its origin, version and redistribution rights.
+Do not submit credentials, access tokens, storage connection strings, personal data or production CSV files. Do not update the Somtoday OpenAPI specification or generated client without documenting its origin, specification version and generation tool/version.
 
 ## Build and test
 
