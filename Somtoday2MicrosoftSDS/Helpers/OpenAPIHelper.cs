@@ -176,7 +176,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
             }
         }
 
-        private async Task<List<Lesgroep>> GetLesgroepenAsync(Vestiging vestiging, CancellationToken cancellationToken)
+        internal async Task<List<Lesgroep>> GetLesgroepenAsync(Vestiging vestiging, CancellationToken cancellationToken)
         {
             _logger?.LogDebug("Fetching lesgroepen...");
             List<Lesgroep> lesgroepen = [];
@@ -194,7 +194,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
             }
         }
 
-        private async Task<List<Medewerker>> GetTeacherInfoAsync(Vestiging vestiging, CancellationToken cancellationToken)
+        internal async Task<List<Medewerker>> GetTeacherInfoAsync(Vestiging vestiging, CancellationToken cancellationToken)
         {
             _logger?.LogDebug("Fetching teachers for vestiging: {VestigingName}", vestiging.Naam);
             List<Medewerker> medewerkers = [];
@@ -212,7 +212,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
             }
         }
 
-        private async Task<List<Leerling>> GetStudentInfoAsync(Vestiging vestiging, CancellationToken cancellationToken)
+        internal async Task<List<Leerling>> GetStudentInfoAsync(Vestiging vestiging, CancellationToken cancellationToken)
         {
             _logger?.LogDebug("Fetching students for vestiging: {VestigingName}", vestiging.Naam);
             List<Leerling> leerlingen = [];
@@ -230,7 +230,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
             }
         }
 
-        private async Task<List<OuderVerzorger>> GetGuardianInfoAsync(Vestiging vestiging, CancellationToken cancellationToken)
+        internal async Task<List<OuderVerzorger>> GetGuardianInfoAsync(Vestiging vestiging, CancellationToken cancellationToken)
         {
             _logger?.LogDebug("Fetching guardians for vestiging: {VestigingName}", vestiging.Naam);
             List<OuderVerzorger> ouders = [];

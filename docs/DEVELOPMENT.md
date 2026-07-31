@@ -25,6 +25,30 @@ dotnet test Somtoday2MicrosoftSDS.sln --configuration Release
 dotnet publish Somtoday2MicrosoftSDS/Somtoday2MicrosoftSDS.csproj --configuration Release --runtime linux-x64 --self-contained false
 ```
 
+### Live Somtoday OpenAPI integration tests
+
+The normal test command does not contact Somtoday: live tests are marked with the `SomtodayIntegration` category and are skipped unless explicitly enabled. Run them against the production OpenAPI with:
+
+```powershell
+.\scripts\Test-SomtodayOpenApi.ps1 -SchoolUuid '<school-uuid>' -ClientId '<client-id>'
+```
+
+PowerShell then prompts for the mandatory `ClientSecret` as a masked secure string. Add `-IncludeGuardians` only when the credential is permitted to retrieve guardian data and that endpoint must also be covered.
+
+The runner enables detailed console output so successful, skipped, and failed tests name every covered endpoint separately:
+
+| Method and path | Coverage |
+|---|---|
+| `POST /oauth2/token?organisation={schoolUuid}` | Client-credentials authentication |
+| `GET /rest/v1/connect/instelling` | Configured institution |
+| `GET /rest/v1/connect/vestiging` | All permitted locations |
+| `GET /rest/v1/connect/vestiging/{vestigingUuid}/lesgroep/` | Current-year groups, paginated |
+| `GET /rest/v1/connect/vestiging/{vestigingUuid}/medewerker` | Current-year employees, paginated |
+| `GET /rest/v1/connect/vestiging/{vestigingUuid}/leerling` | Current-year pupils, paginated |
+| `GET /rest/v1/connect/vestiging/{vestigingUuid}/ouderVerzorger/` | Current-year guardians, paginated; only with `-IncludeGuardians` |
+
+The runner passes the settings to the test process through temporary process-level environment variables, restores any previous values afterwards, and never places the secret on the `dotnet` command line. Each data endpoint is called for every permitted location. The tests validate response structure and identifiers without persisting or logging response objects, counts, credentials, or personal data. API failures are reported using only the exception type and HTTP status where available.
+
 If Azure CLI with Bicep is installed:
 
 ```powershell
