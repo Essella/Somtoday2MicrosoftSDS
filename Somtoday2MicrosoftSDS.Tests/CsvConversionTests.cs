@@ -29,8 +29,9 @@ public class CsvConversionTests
             surname: "NoInitials");
 
         VestigingModel model = CreateModel(guardian, guardianWithoutInitials);
-        SDScsvV1 v1 = new SDScsvHelperV1(model, RunDate).ConvertToSDSCSV();
-        SDScsvV2 v2 = new SDScsvHelperV2(model, RunDate).ConvertToSDSCSV();
+        ResolvedExportPopulation population = ExportPopulationResolver.Resolve(model);
+        SDScsvV1 v1 = new SDScsvHelperV1(population, RunDate).ConvertToSDSCSV();
+        SDScsvV2 v2 = new SDScsvHelperV2(population, RunDate).ConvertToSDSCSV();
 
         Guardian v1Guardian = Assert.Single(v1.User, user => user.SISid == guardian.Uuid.ToString());
         Assert.Equal("guardian@example.test", v1Guardian.Email);
@@ -67,8 +68,9 @@ public class CsvConversionTests
             surname: "Test");
         VestigingModel model = CreateModel(guardian);
 
-        SDScsvV1 v1 = new SDScsvHelperV1(model, RunDate).ConvertToSDSCSV();
-        SDScsvV2 v2 = new SDScsvHelperV2(model, RunDate).ConvertToSDSCSV();
+        ResolvedExportPopulation population = ExportPopulationResolver.Resolve(model);
+        SDScsvV1 v1 = new SDScsvHelperV1(population, RunDate).ConvertToSDSCSV();
+        SDScsvV2 v2 = new SDScsvHelperV2(population, RunDate).ConvertToSDSCSV();
         string guardianId = guardian.Uuid.ToString();
 
         Assert.DoesNotContain(v1.User, user => user.SISid == guardianId);
@@ -124,8 +126,9 @@ public class CsvConversionTests
     {
         VestigingModel model = CreateModel();
 
-        SDScsvV1 v1 = new SDScsvHelperV1(model, RunDate).ConvertToSDSCSV();
-        SDScsvV2 v2 = new SDScsvHelperV2(model, RunDate).ConvertToSDSCSV();
+        ResolvedExportPopulation population = ExportPopulationResolver.Resolve(model);
+        SDScsvV1 v1 = new SDScsvHelperV1(population, RunDate).ConvertToSDSCSV();
+        SDScsvV2 v2 = new SDScsvHelperV2(population, RunDate).ConvertToSDSCSV();
 
         string v1ClassId = Assert.Single(v1.Sections).SISid;
         string v2ClassId = Assert.Single(v2.Classes).sourcedId;

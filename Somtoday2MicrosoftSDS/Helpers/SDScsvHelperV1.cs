@@ -5,12 +5,12 @@ namespace Somtoday2MicrosoftSDS.Helpers
     internal class SDScsvHelperV1
     {
         private readonly SettingsHelper sh = new SettingsHelper();
-        private readonly VestigingModel vestigingModel;
+        private readonly ResolvedExportPopulation population;
         private readonly DateOnly runDate;
 
-        public SDScsvHelperV1(VestigingModel info, DateOnly runDate)
+        public SDScsvHelperV1(ResolvedExportPopulation population, DateOnly runDate)
         {
-            vestigingModel = info;
+            this.population = population;
             this.runDate = runDate;
         }
 
@@ -29,7 +29,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
             result.TeacherRosters = classesInfo.TeacherRoster;
             result.StudentEnrollments = classesInfo.StudentEnrollments;
 
-            var guardianInfo = GetGuardiansAndRelationships(classesInfo.Students);
+            var guardianInfo = GetGuardiansAndRelationships();
 
             result.User = guardianInfo.Guardians;
             result.Guardianrelationship = guardianInfo.Guardianrelationships;
@@ -37,44 +37,31 @@ namespace Somtoday2MicrosoftSDS.Helpers
             return result;
         }
 
-        private (List<Guardian> Guardians, List<GuardianRelationship> Guardianrelationships) GetGuardiansAndRelationships(List<Student> students)
+        private (List<Guardian> Guardians, List<GuardianRelationship> Guardianrelationships) GetGuardiansAndRelationships()
         {
             List<Guardian> guardians = [];
             List<GuardianRelationship> guardianrelationships = [];
-            HashSet<string> studentIds = students.Select(s => s.SISid).ToHashSet(StringComparer.Ordinal);
 
-            foreach (OuderVerzorger ouder in vestigingModel.OuderVerzorgers)
+            foreach (ResolvedGuardian resolvedGuardian in population.Guardians)
             {
-                if (GuardianExportPolicy.IsExportable(ouder) && ouder.Leerlingen_van_vestiging?.Count > 0)
+                OuderVerzorger guardian = resolvedGuardian.Source;
+                foreach (Guid studentId in resolvedGuardian.StudentIds)
                 {
-                    bool guardianFound = false;
-
-                    foreach (Guid leerling in ouder.Leerlingen_van_vestiging)
+                    guardianrelationships.Add(new GuardianRelationship
                     {
-                        string leerlingId = leerling.ToString();
-                        if (studentIds.Contains(leerlingId))
-                        {
-                            guardianFound = true;
-                            guardianrelationships.Add(new GuardianRelationship
-                            {
-                                SISid = leerlingId,
-                                Email = ouder.Emailadres
-                            });
-                        }
-                    }
-
-                    if (guardianFound)
-                    {
-                        guardians.Add(new Guardian
-                        {
-                            SISid = ouder.Uuid.ToString(),
-                            Email = ouder.Emailadres,
-                            FirstName = ouder.Voorletters ?? string.Empty,
-                            Phone = GuardianExportPolicy.GetPhone(ouder),
-                            LastName = GuardianExportPolicy.GetFamilyName(ouder)
-                        });
-                    }
+                        SISid = studentId.ToString(),
+                        Email = guardian.Emailadres
+                    });
                 }
+
+                guardians.Add(new Guardian
+                {
+                    SISid = guardian.Uuid.ToString(),
+                    Email = guardian.Emailadres,
+                    FirstName = guardian.Voorletters ?? string.Empty,
+                    Phone = GuardianExportPolicy.GetPhone(guardian),
+                    LastName = GuardianExportPolicy.GetFamilyName(guardian)
+                });
             }
 
             return (guardians, guardianrelationships);
@@ -89,77 +76,67 @@ namespace Somtoday2MicrosoftSDS.Helpers
             List<TeacherRoster> teacherRoster = [];
             List<StudentEnrollment> studentEnrollments = [];
 
-            Dictionary<Guid, Medewerker> medewerkersById = ToFirstById(vestigingModel.Medewerkers, m => m.Uuid);
-            Dictionary<Guid, Leerling> leerlingenById = ToFirstById(vestigingModel.Leerlingen, s => s.Uuid);
             HashSet<Guid> emittedTeacherIds = [];
             HashSet<Guid> emittedStudentIds = [];
 
-            string vestigingsAfkorting = vestigingModel.Vestiging.Afkorting;
+            string vestigingsAfkorting = population.Vestiging.Afkorting;
             string vestigingsAfkortingLower = vestigingsAfkorting.ToLower();
-            string vestigingUuid = vestigingModel.Vestiging.Uuid.ToString();
+            string vestigingUuid = population.Vestiging.Uuid.ToString();
 
-            foreach (Lesgroep lesgroep in vestigingModel.Lesgroepen)
+            foreach (ResolvedClass resolvedClass in population.Classes)
             {
-                if (!string.IsNullOrEmpty(lesgroep.Naam) && lesgroep.Docenten?.Count > 0 && lesgroep.Leerlingen?.Count > 0)
+                Lesgroep sourceClass = resolvedClass.Source;
+                string sectionName = BusinessLogicHelper.GetFilteredName(sourceClass.Naam);
+                string sectionId = (sourceClass.Naam.StartsWith(vestigingsAfkorting, StringComparison.CurrentCultureIgnoreCase) ? sectionName : vestigingsAfkortingLower + sectionName) + currentSchoolyear;
+
+                Section section = new Section
                 {
-                    string sectieNaam = BusinessLogicHelper.GetFilteredName(lesgroep.Naam);
-                    string sectionId = (lesgroep.Naam.StartsWith(vestigingsAfkorting, StringComparison.CurrentCultureIgnoreCase) ? sectieNaam : vestigingsAfkortingLower + sectieNaam) + currentSchoolyear;
+                    SISSchoolid = vestigingUuid,
+                    SISid = sectionId,
+                    Name = sectionName,
+                    Number = sourceClass.Uuid.ToString(),
+                    CourseName = sourceClass.Vaknaam,
+                    CourseDescription = sourceClass.Onderwijssoort
+                };
+                sections.Add(section);
 
-                    Section lg = new Section
+                foreach (Medewerker teacher in resolvedClass.Teachers)
+                {
+                    string teacherId = teacher.Uuid.ToString();
+                    teacherRoster.Add(new TeacherRoster
                     {
-                        SISSchoolid = vestigingUuid,
-                        SISid = sectionId,
-                        Name = sectieNaam,
-                        Number = lesgroep.Uuid.ToString(),
-                        CourseName = lesgroep.Vaknaam,
-                        CourseDescription = lesgroep.Onderwijssoort
-                    };
-                    sections.Add(lg);
+                        SISTeacherid = teacherId,
+                        SISSectionid = section.SISid
+                    });
 
-                    foreach (Guid mw in lesgroep.Docenten)
+                    if (emittedTeacherIds.Add(teacher.Uuid))
                     {
-                        if (medewerkersById.TryGetValue(mw, out Medewerker currentTeacher))
+                        teachers.Add(new Teacher
                         {
-                            string teacherId = mw.ToString();
-                            teacherRoster.Add(new TeacherRoster
-                            {
-                                SISTeacherid = teacherId,
-                                SISSectionid = lg.SISid
-                            });
-
-                            if (emittedTeacherIds.Add(mw))
-                            {
-                                teachers.Add(new Teacher
-                                {
-                                    SISid = teacherId,
-                                    SISSchoolid = vestigingUuid,
-                                    Username = sh.ReplaceTeacherProperty(SettingsHelper.OutputFormatUsernameTeacher, currentTeacher)
-                                });
-                            }
-                        }
+                            SISid = teacherId,
+                            SISSchoolid = vestigingUuid,
+                            Username = sh.ReplaceTeacherProperty(SettingsHelper.OutputFormatUsernameTeacher, teacher)
+                        });
                     }
+                }
 
-                    foreach (var ll in lesgroep.Leerlingen)
+                foreach (Leerling student in resolvedClass.Students)
+                {
+                    string studentId = student.Uuid.ToString();
+                    studentEnrollments.Add(new StudentEnrollment
                     {
-                        if (leerlingenById.TryGetValue(ll.Uuid, out Leerling currentStudent))
-                        {
-                            string studentId = ll.Uuid.ToString();
-                            studentEnrollments.Add(new StudentEnrollment
-                            {
-                                SISStudentid = studentId,
-                                SISSectionid = lg.SISid
-                            });
+                        SISStudentid = studentId,
+                        SISSectionid = section.SISid
+                    });
 
-                            if (emittedStudentIds.Add(ll.Uuid))
-                            {
-                                students.Add(new Student
-                                {
-                                    SISid = studentId,
-                                    SISSchoolid = vestigingUuid,
-                                    Username = sh.ReplaceStudentProperty(SettingsHelper.OutputFormatUsernameStudent, currentStudent)
-                                });
-                            }
-                        }
+                    if (emittedStudentIds.Add(student.Uuid))
+                    {
+                        students.Add(new Student
+                        {
+                            SISid = studentId,
+                            SISSchoolid = vestigingUuid,
+                            Username = sh.ReplaceStudentProperty(SettingsHelper.OutputFormatUsernameStudent, student)
+                        });
                     }
                 }
             }
@@ -173,21 +150,10 @@ namespace Somtoday2MicrosoftSDS.Helpers
             [
                 new School
                 {
-                    SISid = vestigingModel.Vestiging.Uuid.ToString(),
-                    Name = vestigingModel.Vestiging.Naam
+                    SISid = population.Vestiging.Uuid.ToString(),
+                    Name = population.Vestiging.Naam
                 }
             ];
-        }
-
-        private static Dictionary<Guid, TValue> ToFirstById<TValue>(IEnumerable<TValue> values, Func<TValue, Guid> keySelector)
-        {
-            Dictionary<Guid, TValue> result = [];
-            foreach (TValue value in values)
-            {
-                result.TryAdd(keySelector(value), value);
-            }
-
-            return result;
         }
     }
 }

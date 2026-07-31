@@ -38,12 +38,12 @@ Authenticate for one institution, configure the generated client, page through c
 
 The project owner generated `OpenAPIs/openapi.cs` with Visual Studio from the tracked OpenAPI 3.0.3 specification version 14.10.0. Future generated-client changes require explicit scope plus recorded source, specification version, and generation tool/version.
 
-### SDS transformers and CSV models
+### Export population resolver, SDS transformers, and CSV models
 
-`SDScsvHelperV1` and `SDScsvHelperV2` map location aggregates and username rules into in-memory CSV record collections. Detailed intended mapping is in the [export contract](contracts/EXPORT.md).
+`ExportPopulationResolver` resolves class membership once per location and creates the shared class, teacher, pupil, and guardian population used by both SDS versions. `SDScsvHelperV1` and `SDScsvHelperV2` map that resolved population and the username rules into in-memory CSV record collections. Detailed intended mapping is in the [export contract](contracts/EXPORT.md).
 
-- **Inputs:** One `VestigingModel`, the run's captured Amsterdam date, and the process-global username formatters.
-- **Output:** In-memory V1 or V2.1 CSV model collections.
+- **Inputs:** The resolver receives one `VestigingModel`; the transformers receive its `ResolvedExportPopulation`, the run's captured Amsterdam date, and the process-global username formatters.
+- **Output:** One shared resolved population followed by in-memory V1 and V2.1 CSV model collections.
 - **Boundary:** Does not retrieve missing entities, perform external I/O, or validate the finished dataset against an external SDS service.
 
 ### `FileHelper`, `BlobClientFactory`, and `BlobPathHelper`: Blob output
@@ -68,9 +68,10 @@ Infrastructure does not provision Somtoday access, a Microsoft SDS ingestion con
 4. `BlobClientFactory` creates a container client and `FileHelper` creates the container if needed.
 5. For each configured institution UUID, the process authenticates and selects locations.
 6. Locations within an institution and institutions themselves are processed sequentially. Group, employee, pupil, and optional guardian requests run concurrently within one location.
-7. V1 and V2 helpers construct in-memory record collections using the same captured Amsterdam date and guardian export policy.
-8. `FileHelper` serializes UTF-8 CSV without a byte-order mark and currently uploads each file with overwrite enabled.
-9. The process returns `0` only when no institution was recorded as failed; configuration, cancellation, secret, storage, discovery, or recorded institution failures return `1`.
+7. `ExportPopulationResolver` resolves one shared population per location. Normal mode warns and skips locations without an included class before any dataset Blob upload or deletion; the earlier container-existence check still applies to the run.
+8. V1 and V2 helpers construct in-memory record collections from that same population, captured Amsterdam date, and guardian export policy.
+9. `FileHelper` serializes UTF-8 CSV without a byte-order mark and currently uploads each file with overwrite enabled.
+10. The process returns `0` only when no institution was recorded as failed; configuration, cancellation, secret, storage, discovery, or recorded institution failures return `1`.
 
 ## Current constraints and observations
 
@@ -79,7 +80,7 @@ Infrastructure does not provision Somtoday access, a Microsoft SDS ingestion con
 - Location matching is case-insensitive. Empty inclusion means all locations; exclusion wins over inclusion.
 - Institution and location abbreviations must remain non-empty after normalization. Slash and backslash become `_`, and paths are compared case-insensitively.
 - Current case-insensitive institution-folder collisions and same-institution location-folder collisions fail the affected institution.
-- Normal mode emits both SDS versions for every location aggregate accepted by `OpenAPIHelper`; no configuration switch selects only one version.
+- `OpenAPIHelper` returns every selected location aggregate, including aggregates with empty source collections. Normal mode emits both SDS versions only when the shared resolver finds an included class; an ineligible location is skipped successfully and existing Blob output is left unchanged.
 - Class identifiers currently combine a normalized group/location-derived name with a school-year suffix based on the run's Amsterdam date and an August boundary.
 - Non-storage failure in one institution does not prevent later institutions from being attempted, but any recorded institution failure makes the process exit with `1`.
 - Authentication bodies, tokens, secrets, API bodies, and raw exception messages are excluded from application error summaries by current tests.

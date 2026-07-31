@@ -28,6 +28,12 @@ An institution folder is named from the matching public `Instelling.Afkorting`; 
 
 When institution separation is disabled and equal sanitized location abbreviations occur in different institutions, only the colliding folders are named `{InstitutionAfkorting}_{LocationAfkorting}`. Other unresolved output-path conflicts fail the affected institution.
 
+## Population eligibility and retained output
+
+Normal-mode datasets contain only locations with at least one exportable class under the [export population rules](EXPORT.md#class-and-person-population). When grouping combines multiple locations, ineligible locations are omitted while eligible locations are still published. If no location remains in a publication unit, the application logs a warning and skips the unit without staging, promotion, deletion, or run failure. Existing live output for a skipped unit remains unchanged.
+
+Header-only mode is exempt from normal-mode population eligibility and publishes every selected scope.
+
 ## Publication unit and staging
 
 Each SDS-version dataset from the table is an independent publication unit.
@@ -55,7 +61,7 @@ When guardian sync is disabled, remove these previously published files from eve
 
 When guardian sync is enabled but produces no guardian or relationship records, publish the guardian-specific files with headers only.
 
-Automatic published-output cleanup is otherwise intentionally limited. Output belonging to renamed, removed, or newly excluded institutions and locations is retained.
+Automatic published-output cleanup is otherwise intentionally limited. Output belonging to renamed, removed, newly excluded, or normal-mode-ineligible institutions and locations is retained when its complete publication unit is skipped.
 
 ## Current implementation references
 

@@ -143,17 +143,14 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 List<Leerling> leerlingen = await leerlingenTask;
                 List<OuderVerzorger> ouders = await oudersTask;
 
-                if (lesgroepen.Count > 0 && medewerkers.Count > 0 && leerlingen.Count > 0 && (ouders.Count > 0 || !enableGuardianSync))
+                result.Add(new VestigingModel
                 {
-                    result.Add(new VestigingModel
-                    {
-                        Vestiging = vestiging,
-                        Lesgroepen = lesgroepen,
-                        Leerlingen = leerlingen,
-                        Medewerkers = medewerkers,
-                        OuderVerzorgers = ouders
-                    });
-                }
+                    Vestiging = vestiging,
+                    Lesgroepen = lesgroepen,
+                    Leerlingen = leerlingen,
+                    Medewerkers = medewerkers,
+                    OuderVerzorgers = ouders
+                });
             }
 
             return result;

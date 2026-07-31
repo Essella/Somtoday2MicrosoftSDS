@@ -318,10 +318,6 @@ namespace Somtoday2MicrosoftSDS
 
             foreach (VestigingModel info in allInfo)
             {
-                string basePrefix = GetLocationPrefix(configuration, school, info.Vestiging);
-                string v1Prefix = BlobPathHelper.Combine(basePrefix, "v1");
-                string v2Prefix = BlobPathHelper.Combine(basePrefix, "v2");
-
                 _logger.LogInformation(
                     "Processing {SchoolName}/{LocationName}: {GroupsCount} groups, {TeachersCount} teachers, {StudentsCount} students, {ParentsCount} parents",
                     school.SchoolName,
@@ -331,17 +327,44 @@ namespace Somtoday2MicrosoftSDS
                     info.Leerlingen.Count,
                     info.OuderVerzorgers.Count);
 
+                ResolvedExportPopulation population = ExportPopulationResolver.Resolve(info);
+                if (!ShouldPublishLocation(population, school.SchoolName, _logger))
+                {
+                    continue;
+                }
+
+                string basePrefix = GetLocationPrefix(configuration, school, info.Vestiging);
+                string v1Prefix = BlobPathHelper.Combine(basePrefix, "v1");
+                string v2Prefix = BlobPathHelper.Combine(basePrefix, "v2");
+
                 await fileHelper.SaveV1ToBlobAsync(
-                    new SDScsvHelperV1(info, runDate).ConvertToSDSCSV(),
+                    new SDScsvHelperV1(population, runDate).ConvertToSDSCSV(),
                     containerClient,
                     v1Prefix,
                     cancellationToken);
                 await fileHelper.SaveV2ToBlobAsync(
-                    new SDScsvHelperV2(info, runDate).ConvertToSDSCSV(),
+                    new SDScsvHelperV2(population, runDate).ConvertToSDSCSV(),
                     containerClient,
                     v2Prefix,
                     cancellationToken);
             }
+        }
+
+        internal static bool ShouldPublishLocation(
+            ResolvedExportPopulation population,
+            string schoolName,
+            ILogger<Program> logger)
+        {
+            if (population.Classes.Count > 0)
+            {
+                return true;
+            }
+
+            logger.LogWarning(
+                "Skipping {SchoolName}/{LocationName}: no class has a non-empty name, at least one resolved teacher, and at least one resolved student; existing Blob output is unchanged",
+                schoolName,
+                population.Vestiging.Naam);
+            return false;
         }
 
         private static async Task SaveEmptySchoolOutputAsync(

@@ -4,16 +4,18 @@ This document defines confirmed intended SDS transformation behavior. External S
 
 ## Dataset formats and availability
 
-- Every normal run generates SDS V1 and V2.1 datasets.
+- For every published normal-mode scope, the application generates both an SDS V1 dataset and an SDS V2.1 dataset.
 - Both versions use the same included institutions, locations, classes, teachers, pupils, and guardians.
-- Empty source collections do not suppress a selected output scope. The application emits valid files containing whatever exportable data is available.
+- Normal mode includes a location only when its resolved population contains at least one exportable class. In a grouped dataset, other included locations are still published; the publication unit is skipped only when no location remains. A skip logs a warning, is not a run failure, and leaves existing output unchanged.
 - Header-only mode emits all required files with headers and no data rows. It is enabled by `Output:GenerateEmptyCsv`, `--empty-csv`, or automatically on July 31 in `Europe/Amsterdam` time.
 
 ## Class and person population
 
-A class is exportable only after references are resolved and at least one exportable teacher and one exportable pupil remain. Teacher-only classes, pupil-only classes, and effectively empty classes are excluded.
+A class is exportable only when its name is not null, empty, or whitespace and at least one teacher and one pupil remain after reference resolution. Resolve `Lesgroep.Docenten` and `Lesgroep.Leerlingen` UUIDs against the employees and pupils downloaded for the same location. Treat missing reference collections as empty and ignore UUIDs that do not resolve. Teacher-only classes, pupil-only classes, and effectively empty classes are excluded.
 
 Only teachers and pupils belonging to an included class are exported. A person excluded from all classes is absent from every output file, including organization, role, enrollment, and user-related output.
+
+Username generation happens after population resolution. An empty generated username does not change class eligibility.
 
 School-year calculations use an August boundary and `Europe/Amsterdam` time.
 
@@ -25,7 +27,7 @@ Operational syntax and examples are in the [configuration guide](../operations/C
 
 ## Guardian inclusion and mapping
 
-Guardian sync is optional. A guardian is exportable only when `WenstContactViaEMail` is `true` and the required email value is available. When `WenstContactViaEMail` is `false`, omit the guardian from every user and role file and remove every relationship or other reference to that guardian from all exported files.
+Guardian sync is optional. A guardian is exportable only when `WenstContactViaEMail` is `true`, the required email value is available, and at least one relationship to an included pupil remains. Relationships to excluded pupils are omitted. When `WenstContactViaEMail` is `false`, omit the guardian from every user and role file and remove every relationship or other reference to that guardian from all exported files.
 
 The mapping is:
 
@@ -49,7 +51,3 @@ Somtoday does not indicate whether an adult pupil consented to guardian access. 
 - [Microsoft guardian guidance](https://learn.microsoft.com/en-us/schooldatasync/parents-and-guardians-in-sds) requires names and email for a user referenced by a contact relationship.
 
 The transformer does not retrieve missing entities and does not independently validate the finished dataset against an external SDS service.
-
-## Current implementation references
-
-See `DEV-005`, `DEV-008`, and `DEV-009` in [the deviation register](../DEVIATIONS.md).

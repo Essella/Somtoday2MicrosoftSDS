@@ -53,9 +53,9 @@ A **Somtoday institution** is one configured Somtoday instance identified by an 
 
 The following invariants are confirmed intent:
 
-- Every normal run produces both SDS V1 and V2.1; neither format is legacy.
+- Every published normal-mode scope produces both SDS V1 and V2.1; neither format is legacy.
 - V1 and V2.1 use the same population rules. A class requires at least one resolved exportable teacher and one resolved exportable pupil. People without an included class are excluded from all exported files.
-- Every selected scope produces valid CSV files containing all exportable data that is available, including valid header-only files when source collections are empty.
+- Normal mode includes only locations with at least one exportable class. A publication scope with no included location is skipped with a warning and without changing existing output. Header-only mode still produces valid header-only files for every selected scope.
 - Each SDS-version dataset is an independent publication unit. Its complete file set is generated and staged before live output is overwritten.
 - Publication uses three total attempts per dataset, each with a two-minute timeout, and restores the previous Blob state when promotion fails. A Blob outage that prevents rollback stops the whole application.
 - Institution and location output grouping is controlled independently; the default is separation by institution but not by location.

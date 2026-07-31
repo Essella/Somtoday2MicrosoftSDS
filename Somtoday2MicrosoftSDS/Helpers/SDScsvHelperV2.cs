@@ -6,12 +6,12 @@ namespace Somtoday2MicrosoftSDS.Helpers
     internal class SDScsvHelperV2
     {
         private readonly SettingsHelper sh = new SettingsHelper();
-        private readonly VestigingModel vestigingModel;
+        private readonly ResolvedExportPopulation population;
         private readonly DateOnly runDate;
 
-        public SDScsvHelperV2(VestigingModel info, DateOnly runDate)
+        public SDScsvHelperV2(ResolvedExportPopulation population, DateOnly runDate)
         {
-            vestigingModel = info;
+            this.population = population;
             this.runDate = runDate;
         }
 
@@ -36,27 +36,16 @@ namespace Somtoday2MicrosoftSDS.Helpers
         private List<Relationships> GetRelationships()
         {
             List<Relationships> relationships = [];
-            HashSet<Guid> leerlingIds = vestigingModel.Leerlingen.Select(s => s.Uuid).ToHashSet();
-
-            foreach (OuderVerzorger ouder in vestigingModel.OuderVerzorgers)
+            foreach (ResolvedGuardian resolvedGuardian in population.Guardians)
             {
-                if (ouder.Leerlingen_van_vestiging == null)
+                foreach (Guid studentId in resolvedGuardian.StudentIds)
                 {
-                    continue;
-                }
-
-                foreach (Guid leerling in ouder.Leerlingen_van_vestiging)
-                {
-                    // Heeft deze ouder een gekoppelde leerling?
-                    if (leerlingIds.Contains(leerling) && GuardianExportPolicy.IsExportable(ouder))
+                    relationships.Add(new Relationships
                     {
-                        relationships.Add(new Relationships
-                        {
-                            userSourcedId = leerling.ToString(),
-                            relationshipUserSourcedId = ouder.Uuid.ToString(),
-                            relationshipRole = "guardian" // https://learn.microsoft.com/en-us/schooldatasync/default-list-of-values#contact-relationship-roles
-                        });
-                    }
+                        userSourcedId = studentId.ToString(),
+                        relationshipUserSourcedId = resolvedGuardian.Source.Uuid.ToString(),
+                        relationshipRole = "guardian" // https://learn.microsoft.com/en-us/schooldatasync/default-list-of-values#contact-relationship-roles
+                    });
                 }
             }
 
@@ -69,52 +58,42 @@ namespace Somtoday2MicrosoftSDS.Helpers
             List<Enrollments> enrollments = [];
 
             string currentSchoolyear = AmsterdamTimeHelper.GetSchoolYear(runDate);
-            HashSet<Guid> medewerkerIds = vestigingModel.Medewerkers.Select(m => m.Uuid).ToHashSet();
-            HashSet<Guid> leerlingIds = vestigingModel.Leerlingen.Select(s => s.Uuid).ToHashSet();
-            string vestigingsAfkorting = vestigingModel.Vestiging.Afkorting;
+            string vestigingsAfkorting = population.Vestiging.Afkorting;
             string vestigingsAfkortingLower = vestigingsAfkorting.ToLower();
-            string vestigingUuid = vestigingModel.Vestiging.Uuid.ToString();
+            string vestigingUuid = population.Vestiging.Uuid.ToString();
 
-            foreach (Lesgroep lesgroep in vestigingModel.Lesgroepen)
+            foreach (ResolvedClass resolvedClass in population.Classes)
             {
-                if (lesgroep.Docenten.Count > 0 && lesgroep.Leerlingen.Count > 0)
+                Lesgroep sourceClass = resolvedClass.Source;
+                string className = BusinessLogicHelper.GetFilteredName(sourceClass.Naam);
+                string classSourcedId = (className.StartsWith(vestigingsAfkorting, StringComparison.CurrentCultureIgnoreCase) ? className : vestigingsAfkortingLower + className) + currentSchoolyear;
+
+                Classes sdsClass = new Classes
                 {
-                    string sectieNaam = BusinessLogicHelper.GetFilteredName(lesgroep.Naam);
-                    string classSourcedId = (sectieNaam.StartsWith(vestigingsAfkorting, StringComparison.CurrentCultureIgnoreCase) ? sectieNaam : vestigingsAfkortingLower + sectieNaam) + currentSchoolyear;
+                    title = className,
+                    orgSourcedId = vestigingUuid,
+                    sourcedId = classSourcedId
+                };
 
-                    Classes lg = new Classes
+                classes.Add(sdsClass);
+                foreach (Medewerker teacher in resolvedClass.Teachers)
+                {
+                    enrollments.Add(new Enrollments
                     {
-                        title = sectieNaam,
-                        orgSourcedId = vestigingUuid,
-                        sourcedId = classSourcedId
-                    };
+                        classSourcedId = sdsClass.sourcedId,
+                        userSourcedId = teacher.Uuid.ToString(),
+                        role = "teacher" // https://learn.microsoft.com/en-us/schooldatasync/default-list-of-values#enrollment-roles
+                    });
+                }
 
-                    classes.Add(lg);
-                    foreach (Guid mw in lesgroep.Docenten)
+                foreach (Leerling student in resolvedClass.Students)
+                {
+                    enrollments.Add(new Enrollments
                     {
-                        if (medewerkerIds.Contains(mw)) // als de docent voorkomt in de medewerkerlijst.
-                        {
-                            enrollments.Add(new Enrollments
-                            {
-                                classSourcedId = lg.sourcedId,
-                                userSourcedId = mw.ToString(),
-                                role = "teacher" // https://learn.microsoft.com/en-us/schooldatasync/default-list-of-values#enrollment-roles
-                            });
-                        }
-                    }
-
-                    foreach (var ll in lesgroep.Leerlingen)
-                    {
-                        if (leerlingIds.Contains(ll.Uuid)) // als de leerling voorkomt in de leerlinglijst.
-                        {
-                            enrollments.Add(new Enrollments
-                            {
-                                classSourcedId = lg.sourcedId,
-                                userSourcedId = ll.Uuid.ToString(),
-                                role = "student" // https://learn.microsoft.com/en-us/schooldatasync/default-list-of-values#enrollment-roles
-                            });
-                        }
-                    }
+                        classSourcedId = sdsClass.sourcedId,
+                        userSourcedId = student.Uuid.ToString(),
+                        role = "student" // https://learn.microsoft.com/en-us/schooldatasync/default-list-of-values#enrollment-roles
+                    });
                 }
             }
 
@@ -124,39 +103,36 @@ namespace Somtoday2MicrosoftSDS.Helpers
         private List<Roles> GetRoles()
         {
             List<Roles> result = [];
-            string vestigingUuid = vestigingModel.Vestiging.Uuid.ToString();
+            string vestigingUuid = population.Vestiging.Uuid.ToString();
 
-            foreach (Medewerker mw in vestigingModel.Medewerkers)
+            foreach (Medewerker teacher in population.Teachers)
             {
                 result.Add(new Roles
                 {
                     orgSourcedId = vestigingUuid,
-                    userSourcedId = mw.Uuid.ToString(),
+                    userSourcedId = teacher.Uuid.ToString(),
                     role = "staff"
                 });
             }
 
-            foreach (Leerling ll in vestigingModel.Leerlingen)
+            foreach (Leerling student in population.Students)
             {
                 result.Add(new Roles
                 {
                     orgSourcedId = vestigingUuid,
-                    userSourcedId = ll.Uuid.ToString(),
+                    userSourcedId = student.Uuid.ToString(),
                     role = "student"
                 });
             }
 
-            foreach (OuderVerzorger ov in vestigingModel.OuderVerzorgers)
+            foreach (ResolvedGuardian guardian in population.Guardians)
             {
-                if (GuardianExportPolicy.IsExportable(ov))
+                result.Add(new Roles
                 {
-                    result.Add(new Roles
-                    {
-                        orgSourcedId = vestigingUuid,
-                        userSourcedId = ov.Uuid.ToString(),
-                        role = "other"
-                    });
-                }
+                    orgSourcedId = vestigingUuid,
+                    userSourcedId = guardian.Source.Uuid.ToString(),
+                    role = "other"
+                });
             }
 
             return result;
@@ -165,38 +141,36 @@ namespace Somtoday2MicrosoftSDS.Helpers
         private List<Users> GetUsers()
         {
             List<Users> result = [];
-            foreach (Medewerker mw in vestigingModel.Medewerkers)
+            foreach (Medewerker teacher in population.Teachers)
             {
                 result.Add(new Users
                 {
-                    username = sh.ReplaceTeacherProperty(SettingsHelper.OutputFormatUsernameTeacher, mw),
-                    sourcedId = mw.Uuid.ToString()
+                    username = sh.ReplaceTeacherProperty(SettingsHelper.OutputFormatUsernameTeacher, teacher),
+                    sourcedId = teacher.Uuid.ToString()
                 });
             }
 
-            foreach (Leerling ll in vestigingModel.Leerlingen)
+            foreach (Leerling student in population.Students)
             {
                 result.Add(new Users
                 {
-                    username = sh.ReplaceStudentProperty(SettingsHelper.OutputFormatUsernameStudent, ll),
-                    sourcedId = ll.Uuid.ToString()
+                    username = sh.ReplaceStudentProperty(SettingsHelper.OutputFormatUsernameStudent, student),
+                    sourcedId = student.Uuid.ToString()
                 });
             }
 
-            foreach (OuderVerzorger ov in vestigingModel.OuderVerzorgers)
+            foreach (ResolvedGuardian resolvedGuardian in population.Guardians)
             {
-                if (GuardianExportPolicy.IsExportable(ov))
+                OuderVerzorger guardian = resolvedGuardian.Source;
+                result.Add(new Users
                 {
-                    result.Add(new Users
-                    {
-                        username = ov.Emailadres,
-                        sourcedId = ov.Uuid.ToString(),
-                        givenName = ov.Voorletters ?? string.Empty,
-                        familyName = GuardianExportPolicy.GetFamilyName(ov),
-                        email = ov.Emailadres,
-                        phone = GuardianExportPolicy.GetPhone(ov)
-                    });
-                }
+                    username = guardian.Emailadres,
+                    sourcedId = guardian.Uuid.ToString(),
+                    givenName = guardian.Voorletters ?? string.Empty,
+                    familyName = GuardianExportPolicy.GetFamilyName(guardian),
+                    email = guardian.Emailadres,
+                    phone = GuardianExportPolicy.GetPhone(guardian)
+                });
             }
 
             return result;
@@ -208,8 +182,8 @@ namespace Somtoday2MicrosoftSDS.Helpers
             [
                 new Orgs
                 {
-                    sourcedId = vestigingModel.Vestiging.Uuid.ToString(),
-                    name = vestigingModel.Vestiging.Naam,
+                    sourcedId = population.Vestiging.Uuid.ToString(),
+                    name = population.Vestiging.Naam,
                     type = "school"
                 }
             ];
@@ -217,8 +191,8 @@ namespace Somtoday2MicrosoftSDS.Helpers
 
         private string GetVestigingsIds()
         {
-            StringBuilder result = new StringBuilder(vestigingModel.Vestiging.Afkorting.Length * 3);
-            foreach (char c in vestigingModel.Vestiging.Afkorting)
+            StringBuilder result = new StringBuilder(population.Vestiging.Afkorting.Length * 3);
+            foreach (char c in population.Vestiging.Afkorting)
             {
                 int x = c;
                 result.Append(x.ToString("000"));

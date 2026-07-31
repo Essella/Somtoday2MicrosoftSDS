@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Somtoday2MicrosoftSDS.Helpers;
+using Somtoday2MicrosoftSDS.Models;
 using Xunit;
 
 namespace Somtoday2MicrosoftSDS.Tests;
@@ -113,6 +114,74 @@ public class OpenApiAuthenticationTests
 
         Assert.DoesNotContain(logger.Messages, message => message.Contains(sensitiveBody, StringComparison.Ordinal));
         Assert.DoesNotContain(logger.Messages, message => message.Contains("client-secret", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task EmptySourceCollectionsStillReturnSelectedLocationModel()
+    {
+        RecordingHandler handler = new(request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                return JsonResponse("{\"access_token\":\"token\"}");
+            }
+
+            string path = request.RequestUri.AbsolutePath;
+            if (path.EndsWith("/lesgroep/", StringComparison.Ordinal))
+            {
+                return JsonResponse("{\"lesgroepen\":[]}");
+            }
+
+            if (path.EndsWith("/medewerker", StringComparison.Ordinal))
+            {
+                return JsonResponse("{\"medewerkers\":[]}");
+            }
+
+            if (path.EndsWith("/leerling", StringComparison.Ordinal))
+            {
+                return JsonResponse("{\"leerlingen\":[]}");
+            }
+
+            if (path.EndsWith("/ouderVerzorger/", StringComparison.Ordinal))
+            {
+                return JsonResponse("{\"ouderVerzorgers\":[]}");
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        OpenAPIHelper helper = new(
+            "client-id",
+            "client-secret",
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            SomEnvironmentConfig.Prod,
+            new RecordingHttpClientFactory(handler),
+            new CapturingLogger());
+        Vestiging location = new()
+        {
+            Uuid = Guid.NewGuid(),
+            Naam = "Empty location",
+            Afkorting = "EMPTY"
+        };
+        await helper.ConnectAsync(CancellationToken.None);
+
+        VestigingModel model = Assert.Single(await helper.DownloadAllInfoAsync(
+            [location],
+            enableGuardianSync: true,
+            CancellationToken.None));
+
+        Assert.Same(location, model.Vestiging);
+        Assert.Empty(model.Lesgroepen);
+        Assert.Empty(model.Medewerkers);
+        Assert.Empty(model.Leerlingen);
+        Assert.Empty(model.OuderVerzorgers);
+    }
+
+    private static HttpResponseMessage JsonResponse(string json)
+    {
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
     }
 
     private sealed class RecordingHttpClientFactory : IHttpClientFactory

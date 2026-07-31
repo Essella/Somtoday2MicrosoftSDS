@@ -43,6 +43,8 @@ Houd rekening met de door Somtoday gestelde tijdvensters en gebruiksvoorwaarden 
 
 De huidige applicatie ondersteunt meerdere Somtoday-instellingen, locatie-inclusie en -exclusie, afzonderlijke gebruikersnaamregels voor docenten en leerlingen, optionele guardian-relaties en bestanden met alleen headers. Het bevestigde publicatiecontract voegt instelbare groepering per instelling en/of vestiging toe, maar dat is nog niet geïmplementeerd: de huidige code schrijft altijd per instelling en vestiging (`DEV-003`). Lees vóór productiegebruik het [exportcontract](docs/contracts/EXPORT.md), het [publicatiecontract](docs/contracts/PUBLICATION.md) en de toepasselijke bekende [implementatieafwijkingen](docs/DEVIATIONS.md).
 
+Tijdens een normale run publiceert de applicatie een vestiging alleen wanneer minstens één klas na UUID-resolutie zowel een docent als een leerling bevat. Anders wordt de vestiging met een waarschuwing overgeslagen en blijft eerder gepubliceerde Blob-output ongewijzigd. De expliciete of automatische modus voor bestanden met alleen headers blijft wel voor alle geselecteerde vestigingen publiceren.
+
 Het publieke image is:
 
 ```text

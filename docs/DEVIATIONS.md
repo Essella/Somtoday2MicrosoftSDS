@@ -8,11 +8,8 @@ This register is the single source for known differences between confirmed inten
 |---|---|---|---|
 | `DEV-003` | Output layout | Output always uses `{OutputPrefix}/{SanitizedInstitutionAbbreviation}/{SanitizedLocationAbbreviation}/v1|v2/{FileName}`; the two layout settings and location-only collision rule are absent. | [Publication grouping](contracts/PUBLICATION.md#output-grouping) |
 | `DEV-004` | Institution naming | Institution discovery uses the authenticated configured environment instead of the public production institution endpoint. | [Institution abbreviation source](contracts/PUBLICATION.md#institution-abbreviation-source) |
-| `DEV-005` | Source availability | A selected location is omitted unless groups, employees, and pupils are all non-empty; guardian-enabled runs also require a guardian. | [Export availability](contracts/EXPORT.md#dataset-formats-and-availability) |
 | `DEV-006` | Publication | Files overwrite live Blob output individually; complete staging, destination snapshots, retry/timeout, promotion rollback, and global storage-stop behavior are absent. | [Publication unit and staging](contracts/PUBLICATION.md#publication-unit-and-staging) |
 | `DEV-007` | Guardian file lifecycle | Disabling guardian sync does not remove prior guardian files; enabled sync skips empty guardian files instead of replacing them with header-only files. | [Guardian file lifecycle](contracts/PUBLICATION.md#guardian-file-lifecycle) |
-| `DEV-008` | V2 population | V2 exports every downloaded employee and pupil as a user/role, including people without an included class. | [Class and person population](contracts/EXPORT.md#class-and-person-population) |
-| `DEV-009` | Class eligibility | Both converters test source references before resolving them, so a class can be emitted without both an exported teacher and exported pupil. | [Class and person population](contracts/EXPORT.md#class-and-person-population) |
 
 ## Resolved deviations
 
@@ -20,6 +17,9 @@ This register is the single source for known differences between confirmed inten
 |---|---|---|
 | `DEV-001` | 2026-07-30 | The release workflow publishes only the supported `linux/amd64` container image and no Windows archive. |
 | `DEV-002` | 2026-07-30 | Releases no longer depend on the `OPENAPI_REDISTRIBUTION_CONFIRMED` repository variable. |
+| `DEV-005` | 2026-07-31 | The owner-confirmed availability intent was revised: the adapter now returns every selected location, normal mode resolves population once and skips only locations without an exportable class, and a skip warns without changing existing output or failing the run. Header-only mode remains independent. |
+| `DEV-008` | 2026-07-31 | V1 and V2.1 now consume one resolved population, so unassigned employees and pupils are absent from users, roles, enrollments, and other exported files. |
+| `DEV-009` | 2026-07-31 | Class membership is now resolved by UUID before eligibility is decided; blank-named classes are excluded, unresolved references are ignored, and every included class retains at least one resolved teacher and pupil. |
 | `DEV-010` | 2026-07-30 | Each run captures one `Europe/Amsterdam` date for the July 31 trigger and both converters' school-year calculation. |
 | `DEV-011` | 2026-07-30 | V2.1 guardian users include the confirmed given name, family name, and email mappings. |
 | `DEV-012` | 2026-07-30 | V1 guardian first and last names follow the confirmed initials and joined-prefix mapping. |
