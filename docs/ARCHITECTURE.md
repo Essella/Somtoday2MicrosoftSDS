@@ -6,7 +6,7 @@ This document separates confirmed intended component boundaries from code-observ
 
 ### `Program`: process orchestration
 
-Owns the run lifecycle, composition root, institution isolation, global storage-stop behavior, retry and rollback orchestration, output-scope planning, path-collision checks, mode selection, grouped conversion/upload sequencing, and final exit code.
+Owns the run lifecycle, composition root, institution isolation, output-scope and dataset order, fatal storage-stop behavior, path-collision checks, mode selection, grouped conversion/publication sequencing, school failure accounting, and final exit code.
 
 - **Inputs:** Command-line arguments, host configuration, current date, dependency-injection services, and application cancellation.
 - **Side effects and outputs:** Logs and a process exit code; Somtoday, Key Vault, and Blob effects are delegated to their owning components.
@@ -46,13 +46,21 @@ The project owner generated `OpenAPIs/openapi.cs` with Visual Studio from the tr
 - **Output:** One shared resolved population followed by in-memory V1 and V2.1 CSV model collections.
 - **Boundary:** Does not retrieve missing entities, perform external I/O, or validate the finished dataset against an external SDS service.
 
-### `FileHelper`, `BlobClientFactory`, and `BlobPathHelper`: Blob output
+### `FileHelper`: complete CSV serialization
 
-Select Blob authentication, normalize prefixes, create the container, serialize CSV, stage datasets, snapshot live Blobs, promote complete datasets, roll back failed promotion, and manage guardian-file lifecycle. Detailed intended behavior is in the [publication contract](contracts/PUBLICATION.md).
+Serializes every file of one V1 or V2.1 publication unit to memory before Blob I/O starts. It includes header-only guardian files whenever guardian sync is enabled.
 
-- **Inputs:** Validated storage settings, SDS record sets, Blob prefixes, and cancellation.
-- **Side effects:** Container creation, Blob uploads, promotion/rollback, and guardian-file removal required by the run plan.
-- **Boundary:** Does not select institutions or locations and does not decide export population.
+- **Inputs:** SDS record collections and the guardian setting.
+- **Output:** One complete in-memory `PublicationDataset` with the known core and guardian file names.
+- **Boundary:** Has no external I/O and does not select institutions, locations, staging paths, or rollback state.
+
+### `DatasetPublisher`, Blob store, `BlobClientFactory`, and `BlobPathHelper`: Blob publication
+
+Select Blob authentication, normalize prefixes, create the container, stage a complete dataset, perform server-side complete-set promotion retries, find complete application-authored Blob-version groups, restore after exhausted promotion, clean staging, and manage guardian-file lifecycle. Detailed behavior is in the [publication contract](contracts/PUBLICATION.md).
+
+- **Inputs:** Validated storage settings, one `PublicationDataset`, its live prefix, the captured run timestamp, the run's UUIDv7 identifier, and cancellation.
+- **Side effects:** Container creation, staging uploads, live server-side copies, version-based rollback, staging cleanup, and known guardian-file removal.
+- **Boundary:** Does not serialize CSV, select institutions or locations, decide export population, or decide whether a recoverable dataset failure stops later datasets.
 
 ### Infrastructure and delivery
 
@@ -65,14 +73,15 @@ Infrastructure does not provision Somtoday access, a Microsoft SDS ingestion con
 1. `Program` creates the generic host, logger, HTTP client factory, `FileHelper`, and `SomtodaySecretProvider`.
 2. The secret provider resolves Key Vault or Development credentials.
 3. `SyncConfiguration` validates run settings; `SettingsHelper` initializes username expressions separately.
-4. `BlobClientFactory` creates a container client and `FileHelper` creates the container if needed.
+4. `BlobClientFactory` creates the authenticated Blob context. The Blob store creates the container if needed, and `DatasetPublisher` removes application-owned staging Blobs left by interrupted runs.
 5. The process retrieves the public production institution list once without authentication and matches each configured institution UUID.
 6. For each matched institution, the process authenticates against the configured environment, selects locations, and creates the complete output-layout plan before population eligibility is evaluated.
 7. Locations within an institution and institutions themselves are downloaded sequentially. Group, employee, pupil, and optional guardian requests run concurrently within one location.
 8. `ExportPopulationResolver` resolves one shared population per location. Normal mode warns and omits locations without an included class; source-level institution failures are excluded from combined scopes while successfully resolved institutions remain publishable.
 9. For every planned output scope, the V1 and V2 helpers are both invoked with the same remaining ordered location populations, captured Amsterdam date, and guardian export policy. Neither version has an exclusion path. A conversion failure blocks that versioned publication unit but does not suppress the mandatory attempt for the other version or later output scopes.
-10. `FileHelper` serializes UTF-8 CSV without a byte-order mark and currently uploads each file with overwrite enabled. V1 and V2.1 publication failures are isolated even though both versions are always attempted.
-11. The process returns `0` only when no institution was recorded as failed; configuration, cancellation, secret, storage, discovery, data-download, layout, conversion, or publication failures return `1`.
+10. `Program` creates one compact UUIDv7 run identifier. `FileHelper` serializes the complete UTF-8 CSV set without a byte-order mark, and `DatasetPublisher` stages it once below `.staging/{RunId}/`, promotes it with at most four complete-set attempts, and uses application metadata plus Blob versions for complete-set rollback after exhausted promotion.
+11. A successful rollback isolates the publication failure to that dataset; missing or failed rollback propagates a fatal exception so `Program` stops later datasets. Application cancellation bypasses rollback.
+12. The process returns `0` only when no institution was recorded as failed; configuration, cancellation, secret, storage, discovery, data-download, layout, conversion, or publication failures return `1`.
 
 ## Current constraints and observations
 
@@ -87,6 +96,8 @@ Infrastructure does not provision Somtoday access, a Microsoft SDS ingestion con
 - Grouped conversion preserves each version's existing class identifier formula and blocks a versioned dataset when different source classes produce the same case-insensitive identifier. V1 retains one teacher or pupil row per location; V2.1 deduplicates one source person across locations and retains organization roles.
 - Authentication bodies, tokens, secrets, API bodies, and raw exception messages are excluded from application error summaries by current tests.
 - Cancellation flows through retries, HTTP, Key Vault, and Blob operations and results in exit code `1`.
+- Publication uses the Azure Blob SDK defaults and adds no operation timeout or delay. Startup staging cleanup makes overlapping application runs unsupported.
+- Production infrastructure enables Blob versioning and expires previous versions after seven days; Blob soft delete can retain lifecycle-deleted versions temporarily beyond that point.
 - The username formatter accepts every public property on the generated `Medewerker` or `Leerling` model. The types include unsuitable or sensitive fields, and their property sets differ.
 - Examples of exposed but unsuitable or sensitive properties include BSN/ECK identifiers, dates, phone numbers, and nested objects.
 - Composite username text must currently start with `{user.` and end with `}` or normalization treats the entire value as one property. Tests do not yet define every supported Dynamic LINQ operation, null case, or casing result.

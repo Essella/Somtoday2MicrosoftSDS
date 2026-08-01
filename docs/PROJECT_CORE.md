@@ -57,7 +57,7 @@ The following invariants are confirmed intent:
 - V1 and V2.1 use the same population rules. A class requires at least one resolved exportable teacher and one resolved exportable pupil. People without an included class are excluded from all exported files.
 - Normal mode includes only locations with at least one exportable class. A publication scope with no included location is skipped with a warning and without changing existing output. Header-only mode still produces valid header-only files for every selected scope.
 - Each mandatory SDS-version dataset is a separate, failure-isolated publication unit. Its complete file set is generated and staged before live output is overwritten.
-- Publication uses three total attempts per dataset, each with a two-minute timeout, and restores the previous Blob state when promotion fails. A Blob outage that prevents rollback stops the whole application.
+- Publication uploads each complete in-memory dataset once to staging and then uses one promotion attempt plus three complete-set retries with the Azure Blob SDK's default retry and timeout behavior. After exhausted promotion, it restores the newest older complete application-authored set from Blob versions; absence or failure of that rollback stops the whole application.
 - Institution and location output grouping is controlled independently; the default is separation by institution but not by location.
 - School-year boundaries and the automatic July 31 header-only trigger use `Europe/Amsterdam`, including CET/CEST.
 - Guardian output follows the confirmed consent, name, email, phone, and secret-number rules in the export contract.

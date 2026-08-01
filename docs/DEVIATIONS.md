@@ -4,15 +4,14 @@ This register is the single source for known differences between confirmed inten
 
 ## Active deviations
 
-| ID | Area | Current behavior | Intended reference |
-|---|---|---|---|
-| `DEV-006` | Publication | Files overwrite live Blob output individually; complete staging, destination snapshots, retry/timeout, promotion rollback, and global storage-stop behavior are absent. | [Publication unit and staging](contracts/PUBLICATION.md#publication-unit-and-staging) |
-| `DEV-007` | Guardian file lifecycle | Disabling guardian sync does not remove prior guardian files; enabled sync skips empty guardian files instead of replacing them with header-only files. | [Guardian file lifecycle](contracts/PUBLICATION.md#guardian-file-lifecycle) |
+None.
 
 ## Resolved deviations
 
 | ID | Resolved | Resolution |
 |---|---|---|
+| `DEV-006` | 2026-08-01 | Complete in-memory datasets are staged once, promoted by server-side copy with one attempt plus three complete-set retries, and restored from the newest older complete application-authored Blob-version group after exhausted promotion. Missing or failed rollback stops later datasets. |
+| `DEV-007` | 2026-08-01 | Guardian-enabled datasets always publish their guardian-specific files, including header-only files, while guardian-disabled promotion removes the known guardian files and rollback restores the selected older set's guardian state. |
 | `DEV-003` | 2026-07-31 | Both output-layout settings now plan the four confirmed dataset scopes, including location-only collision disambiguation and grouped location conversion. |
 | `DEV-004` | 2026-07-31 | Each run now retrieves the institution list once from the unauthenticated public production endpoint and uses the matching public abbreviation independently of the configured synchronization environment. |
 | `DEV-001` | 2026-07-30 | The release workflow publishes only the supported `linux/amd64` container image and no Windows archive. |

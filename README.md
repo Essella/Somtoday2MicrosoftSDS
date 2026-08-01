@@ -49,6 +49,10 @@ Tijdens een normale run neemt de applicatie een vestiging alleen op wanneer mins
 
 Als één instelling niet publiek kan worden gematcht, geen geldige uitvoerpaden oplevert of de brongegevens niet kunnen worden opgehaald, publiceert een samengevoegde scope de succesvol opgeloste instellingen en eindigt de run met exitcode `1`. Een conversie- of uploadfout blokkeert de betrokken SDS-versie en markeert alle deelnemende instellingen als mislukt, maar verhindert de verplichte poging voor de andere versie of een volgende scope niet. Als de publieke productielijst met instellingen zelf niet bereikbaar is, wordt geen SDS-dataset gepubliceerd.
 
+Iedere volledige CSV-set wordt eerst in geheugen gemaakt en eenmaal naar `.staging/{RunId}/` geschreven, waarbij `RunId` één compacte UUIDv7 voor de volledige applicatierun is. Daarna kopieert de applicatie de set intern naar de live bestandsnamen, met één eerste promotiepoging en maximaal drie volledige herpogingen. Na vier mislukte promoties herstelt zij de nieuwste oudere, volledige set die aantoonbaar door deze applicatie is gepubliceerd. Handmatig geplaatste bestanden zonder applicatiemetadata worden normaal overschreven, maar nooit als automatische herstelbron gebruikt. Als geen volledige herstelset bestaat of herstel mislukt, stopt de gehele run; bij geslaagd herstel kunnen volgende datasets doorgaan.
+
+De Azure-template schakelt Blob-versioning in en bewaart vorige versies via een lifecycle-regel zeven dagen. De bestaande soft-deleteperiode van zeven dagen kan door de lifecycle verwijderde versies daarna nog tijdelijk herstelbaar houden. Guardian-sync aan publiceert de guardianbestanden ook als die alleen headers bevatten; guardian-sync uit verwijdert de bekende guardianbestanden bij promotie. Gelijktijdige of overlappende applicatieruns worden niet ondersteund.
+
 Het publieke image is:
 
 ```text

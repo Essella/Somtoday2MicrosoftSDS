@@ -15,7 +15,7 @@ $env:DOTNET_ENVIRONMENT = 'Development'
 dotnet run --project Somtoday2MicrosoftSDS/Somtoday2MicrosoftSDS.csproj
 ```
 
-The example uses `UseDevelopmentStorage=true` for Azurite. Start Azurite or place a Development-only connection string in the ignored file. A configured service URI uses `DefaultAzureCredential` and takes precedence.
+The example uses `UseDevelopmentStorage=true` for Azurite. Start Azurite or place a Development-only connection string in the ignored file. A configured service URI uses `DefaultAzureCredential` and takes precedence. The [Azurite support matrix](https://github.com/Azure/Azurite#support-matrix) records that Blob Versions are unsupported, so Azurite cannot validate the production rollback path.
 
 ## Build and test
 
@@ -56,6 +56,12 @@ az bicep build --file infra/main.bicep
 ```
 
 `infra/main.bicep` is authoritative. Do not edit `infra/azuredeploy.json` manually.
+
+### Blob publication and rollback tests
+
+Mandatory CI coverage uses the version-aware in-memory Blob fake in `DatasetPublisherTests`. It covers staging order, four complete promotion attempts, metadata, complete-set selection, guardian state, rollback failure, staging cleanup, cancellation, and safe logging without depending on an emulator.
+
+Azurite is useful for basic local Blob connectivity but is not evidence for version-based recovery because Blob Versions are unsupported. An optional end-to-end check must use a temporary, non-production StorageV2 account with versioning enabled, a disposable container, the same seven-day lifecycle policy, and `Storage Blob Data Contributor` for the test identity. Use only header-only synthetic datasets, verify that server-side promotion creates versions and that a deliberately interrupted promotion can restore a complete older application-metadata group, then delete the temporary resource group. Never point this check at production output.
 
 ## Local Linux-container smoke test on Windows
 

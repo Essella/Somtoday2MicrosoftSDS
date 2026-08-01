@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.45.15.27210",
-      "templateHash": "7764739892142609815"
+      "version": "0.46.1.21595",
+      "templateHash": "7328269751964745617"
     }
   },
   "parameters": {
@@ -276,6 +276,7 @@
       "apiVersion": "2023-05-01",
       "name": "[format('{0}/{1}', variables('storageAccountName'), 'default')]",
       "properties": {
+        "isVersioningEnabled": true,
         "deleteRetentionPolicy": {
           "enabled": true,
           "days": 7
@@ -283,6 +284,42 @@
         "containerDeleteRetentionPolicy": {
           "enabled": true,
           "days": 7
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/{1}', variables('storageAccountName'), 'default')]",
+      "properties": {
+        "policy": {
+          "rules": [
+            {
+              "enabled": true,
+              "name": "delete-previous-blob-versions-after-seven-days",
+              "type": "Lifecycle",
+              "definition": {
+                "actions": {
+                  "version": {
+                    "delete": {
+                      "daysAfterCreationGreaterThan": 7
+                    }
+                  }
+                },
+                "filters": {
+                  "blobTypes": [
+                    "blockBlob"
+                  ],
+                  "prefixMatch": [
+                    "[format('{0}/', parameters('blobContainerName'))]"
+                  ]
+                }
+              }
+            }
+          ]
         }
       },
       "dependsOn": [

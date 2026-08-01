@@ -231,6 +231,7 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01'
   parent: storageAccount
   name: 'default'
   properties: {
+    isVersioningEnabled: true
     deleteRetentionPolicy: {
       enabled: true
       days: 7
@@ -238,6 +239,39 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01'
     containerDeleteRetentionPolicy: {
       enabled: true
       days: 7
+    }
+  }
+}
+
+resource storageManagementPolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
+  parent: storageAccount
+  name: 'default'
+  properties: {
+    policy: {
+      rules: [
+        {
+          enabled: true
+          name: 'delete-previous-blob-versions-after-seven-days'
+          type: 'Lifecycle'
+          definition: {
+            actions: {
+              version: {
+                delete: {
+                  daysAfterCreationGreaterThan: 7
+                }
+              }
+            }
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+              prefixMatch: [
+                '${blobContainerName}/'
+              ]
+            }
+          }
+        }
+      ]
     }
   }
 }

@@ -106,6 +106,17 @@ jobs:
           az bicep build --file infra/main.bicep --outfile "${{ runner.temp }}/main.json"
           az bicep build-params --file infra/main.example.bicepparam --outfile "${{ runner.temp }}/main.parameters.json"
 
+          jq -e '
+            any(.resources[]; .type == "Microsoft.Storage/storageAccounts/blobServices"
+              and .properties.isVersioningEnabled == true
+              and .properties.deleteRetentionPolicy.enabled == true
+              and .properties.deleteRetentionPolicy.days == 7)
+            and any(.resources[]; .type == "Microsoft.Storage/storageAccounts/managementPolicies"
+              and any(.properties.policy.rules[];
+                .enabled == true
+                and .definition.actions.version.delete.daysAfterCreationGreaterThan == 7))
+          ' "${{ runner.temp }}/main.json"
+
           jq --sort-keys 'del(.metadata._generator)' "${{ runner.temp }}/main.json" > "${{ runner.temp }}/main.canonical.json"
           jq --sort-keys 'del(.metadata._generator)' infra/azuredeploy.json > "${{ runner.temp }}/azuredeploy.canonical.json"
           diff --unified "${{ runner.temp }}/main.canonical.json" "${{ runner.temp }}/azuredeploy.canonical.json"

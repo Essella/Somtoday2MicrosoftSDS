@@ -55,17 +55,34 @@ Conversion and upload results are failure-isolated per planned scope and SDS ver
 Each mandatory SDS-version dataset from the table is a separate, failure-isolated publication unit. This separation does not make either version optional.
 
 1. Generate its complete CSV set successfully in memory.
-2. Upload the complete set to staging before overwriting live output.
-3. Before promotion, snapshot every existing destination Blob and record planned destination Blobs that do not yet exist.
-4. Promote the staged files to the live destination.
+2. Assign the same metadata to every file:
+   - `syncidproducer=Somtoday2MicrosoftSDS`
+   - `syncidrunutc=<the job's UTC ISO-8601 run timestamp>`
+   - `syncidsdsversion=v1|v2`
+   - `syncidguardians=true|false`
+3. Create one UUIDv7 `RunId` when the application run starts and upload the complete set once to `{LivePrefix}/.staging/{RunId}/` before overwriting live output.
+4. Promote each staged file to its known live name with a server-side Blob copy.
 
-Each dataset receives at most three total publication attempts. One attempt covers staging and, when staging succeeds, promotion. Each attempt has a two-minute timeout. A successful promotion may temporarily expose old and new files during the same run.
+Promotion gets one initial attempt plus three complete-set retries. Every retry starts again with the first promotion action; staging is not uploaded again. Use the Azure Blob SDK's default retries and timeouts without an application timeout, delay, or snapshot layer. A successful promotion can temporarily expose old and new files during the same run.
 
-If staging exhausts its attempts, live output remains untouched and processing continues with the next dataset. If promotion exhausts its attempts, restore every snapshot and delete every Blob created by that promotion before continuing. No success-marker Blob is used.
+A staging or conversion failure marks the affected dataset and its participating institutions as failed while leaving live output unchanged. It does not suppress the mandatory attempt for another SDS version or later scope. Application cancellation stops immediately without rollback. No success-marker Blob is used.
 
-If a Blob outage also prevents rollback, the entire application stops and no later datasets are processed. A later run does not resume rollback or reuse staging; it downloads current Somtoday data and generates each dataset again.
+Delete the dataset's staging files after successful promotion or completed error handling. At startup, remove active application-owned staging Blobs left by an aborted run. Runs must not overlap: startup cleanup is allowed to remove another run's staging data, so overlapping runs are unsupported.
 
-Delete an attempt's staging data as soon as it is no longer needed. This includes partial staging after a failed attempt, staging after successful promotion, and staging after a completed rollback. Retries and later runs never reuse staging data.
+## Complete-set rollback from Blob versions
+
+[Blob versioning](https://learn.microsoft.com/en-us/azure/storage/blobs/versioning-overview) must be enabled for the output storage account. Promotion does not inspect existing live files, metadata, or version IDs. Manually initialized or corrected live files are therefore overwritten normally.
+
+Only after all four promotion attempts fail, list base Blobs and versions for the dataset's known live file names. A version is an eligible rollback source only when all four application metadata values are present and valid. Exclude the current failed run, group older versions by run timestamp, SDS version, and guardian setting, and select the newest older group that is complete. If retries created multiple versions of one file for the same run timestamp, select the version with the newest Blob last-modified timestamp.
+
+A complete group contains:
+
+- V1: `School.csv`, `Section.csv`, `Teacher.csv`, `Student.csv`, `TeacherRoster.csv`, and `StudentEnrollment.csv`, plus `User.csv` and `Guardianrelationship.csv` when that group has guardian sync enabled.
+- V2.1: `orgs.csv`, `users.csv`, `roles.csv`, `classes.csv`, and `enrollments.csv`, plus `relationships.csv` when that group has guardian sync enabled.
+
+Restore every file in the chosen group to its live name. When the chosen group has guardian sync disabled, remove the known guardian-specific live files. Unknown files and versions without valid application metadata are never rollback sources and are not automatically removed.
+
+If no complete older application set exists, restore nothing, fail fatally, and do not process later datasets. If an individual restore or guardian-removal action fails, attempt the remaining rollback actions and then fail fatally. After a complete successful rollback, only the affected dataset and its participating institutions are failed; processing continues with later SDS versions and scopes.
 
 ## Guardian file lifecycle
 
@@ -78,7 +95,3 @@ When guardian sync is disabled, remove these previously published files from eve
 When guardian sync is enabled but produces no guardian or relationship records, publish the guardian-specific files with headers only.
 
 Automatic published-output cleanup is otherwise intentionally limited. Output belonging to renamed, removed, newly excluded, or normal-mode-ineligible institutions and locations is retained when its complete publication unit is skipped.
-
-## Current implementation references
-
-See `DEV-006` and `DEV-007` in [the deviation register](../DEVIATIONS.md).

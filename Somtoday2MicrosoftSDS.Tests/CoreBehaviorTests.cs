@@ -332,6 +332,16 @@ public class CoreBehaviorTests
         Assert.Equal(expected, Program.ShouldGenerateEmptyCsv(args, false, new DateOnly(2026, month, day)));
     }
 
+    [Fact]
+    public void RunIdIsACompactVersion7Guid()
+    {
+        string runId = Program.CreateRunId();
+
+        Assert.Equal(32, runId.Length);
+        Assert.True(Guid.TryParseExact(runId, "N", out _));
+        Assert.Equal('7', runId[12]);
+    }
+
     [Theory]
     [InlineData(2026, 7, 30, 22, 30, 2026, 7, 31)]
     [InlineData(2026, 12, 31, 23, 30, 2027, 1, 1)]

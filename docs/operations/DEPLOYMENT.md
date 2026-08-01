@@ -10,7 +10,7 @@ Operators need an Azure subscription, permission to create resources and role as
 
 `infra/main.bicep` provisions:
 
-- a StorageV2 account and private Blob container;
+- a StorageV2 account with Blob versioning, seven-day previous-version lifecycle retention, seven-day Blob soft delete, and a private Blob container;
 - a Key Vault using RBAC, soft delete, and purge protection;
 - Log Analytics;
 - a Consumption Container Apps environment;
@@ -21,6 +21,14 @@ The identity receives `Storage Blob Data Contributor` on the output container an
 Defaults are public `latest` image, `0 1 * * *` UTC schedule, one replica, 0.5 vCPU, 1 GiB memory, 3,600-second Job timeout, and one Container Apps retry. Pin production deployments to a release tag or digest. Container Apps cron schedules are evaluated in UTC.
 
 Output is separated by institution by default and combines selected locations within each institution. The `separateByInstitution` and `separateByLocation` deployment parameters map to the application's independent output-layout settings.
+
+## Blob versions, retention, and run overlap
+
+The publication rollback path requires Blob versioning. The supplied Bicep and derived ARM template enable it and add a lifecycle rule that deletes previous versions after seven days. Existing seven-day Blob soft delete can keep a version temporarily recoverable after the lifecycle deletion; budget and privacy retention reviews must account for that additional period.
+
+Redeploy the template to existing installations before running an application version that uses version-based rollback. Do not disable versioning or remove the lifecycle policy independently of the application publication contract.
+
+The application removes application-owned active staging Blobs at startup. This recovers staging space after an interrupted run but also means overlapping scheduled, manual, or retried runs are unsupported. Keep one active Job execution at a time.
 
 ## Azure Portal
 

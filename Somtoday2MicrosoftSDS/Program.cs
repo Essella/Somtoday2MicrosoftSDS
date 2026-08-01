@@ -1,4 +1,3 @@
-using Azure.Storage.Blobs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -30,6 +29,11 @@ namespace Somtoday2MicrosoftSDS
             return configuredGenerateEmptyCsv || requestedByArgument || isYearEnd;
         }
 
+        internal static string CreateRunId()
+        {
+            return Guid.CreateVersion7().ToString("N");
+        }
+
         private static async Task<int> Main(string[] args)
         {
             HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
@@ -50,7 +54,9 @@ namespace Somtoday2MicrosoftSDS
 
             try
             {
-                DateOnly runDate = AmsterdamTimeHelper.GetDate(TimeProvider.System.GetUtcNow());
+                DateTimeOffset runStartedUtc = TimeProvider.System.GetUtcNow();
+                string runId = CreateRunId();
+                DateOnly runDate = AmsterdamTimeHelper.GetDate(runStartedUtc);
                 _logger.LogInformation(
                     "Application starting with version: {Version}",
                     System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString());
@@ -88,8 +94,15 @@ namespace Somtoday2MicrosoftSDS
                 }
 
                 bool generateEmptyCsv = ShouldGenerateEmptyCsv(args, configuration.GenerateEmptyCsv, runDate);
-                BlobContainerClient containerClient = BlobClientFactory.CreateContainerClient(configuration);
-                await fileHelper.EnsureContainerExistsAsync(containerClient, cancellationToken);
+                BlobStorageContext storageContext = BlobClientFactory.CreateStorageContext(configuration);
+                AzureBlobPublicationStore publicationStore = new(storageContext);
+                await publicationStore.EnsureContainerExistsAsync(cancellationToken);
+                DatasetPublisher publisher = new(
+                    publicationStore,
+                    host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<DatasetPublisher>(),
+                    runStartedUtc,
+                    runId);
+                await publisher.CleanupStaleStagingAsync(cancellationToken);
                 _logger.LogInformation(
                     "Azure Blob Storage output enabled for container {Container} using {AuthenticationMode}",
                     configuration.BlobContainer,
@@ -202,7 +215,7 @@ namespace Somtoday2MicrosoftSDS
                             unavailableSchools,
                             configuration,
                             fileHelper,
-                            containerClient,
+                            publisher,
                             failedSchools,
                             cancellationToken);
                     }
@@ -213,8 +226,9 @@ namespace Somtoday2MicrosoftSDS
                             unavailableSchools,
                             populations,
                             runDate,
+                            configuration.EnableGuardianSync,
                             fileHelper,
-                            containerClient,
+                            publisher,
                             failedSchools,
                             cancellationToken);
                     }
@@ -389,8 +403,9 @@ namespace Somtoday2MicrosoftSDS
             IReadOnlySet<Guid> unavailableSchools,
             IReadOnlyDictionary<(Guid SchoolUuid, Guid LocationUuid), ResolvedLocationContext> populations,
             DateOnly runDate,
+            bool includeGuardianSync,
             FileHelper fileHelper,
-            BlobContainerClient containerClient,
+            DatasetPublisher publisher,
             HashSet<Guid> failedSchools,
             CancellationToken cancellationToken)
         {
@@ -430,9 +445,10 @@ namespace Somtoday2MicrosoftSDS
                 BlobPathHelper.Combine(availableScope.BasePrefix, "v1"),
                 participantSchoolUuids,
                 failedSchools,
-                () => fileHelper.SaveV1ToBlobAsync(
-                    new SDScsvHelperV1(scopePopulations, runDate).ConvertToSDSCSV(),
-                    containerClient,
+                () => publisher.PublishAsync(
+                    fileHelper.CreateV1Dataset(
+                        new SDScsvHelperV1(scopePopulations, runDate).ConvertToSDSCSV(),
+                        includeGuardianSync),
                     BlobPathHelper.Combine(availableScope.BasePrefix, "v1"),
                     cancellationToken),
                 cancellationToken);
@@ -442,9 +458,10 @@ namespace Somtoday2MicrosoftSDS
                 BlobPathHelper.Combine(availableScope.BasePrefix, "v2"),
                 participantSchoolUuids,
                 failedSchools,
-                () => fileHelper.SaveV2ToBlobAsync(
-                    new SDScsvHelperV2(scopePopulations, runDate).ConvertToSDSCSV(),
-                    containerClient,
+                () => publisher.PublishAsync(
+                    fileHelper.CreateV2Dataset(
+                        new SDScsvHelperV2(scopePopulations, runDate).ConvertToSDSCSV(),
+                        includeGuardianSync),
                     BlobPathHelper.Combine(availableScope.BasePrefix, "v2"),
                     cancellationToken),
                 cancellationToken);
@@ -455,7 +472,7 @@ namespace Somtoday2MicrosoftSDS
             IReadOnlySet<Guid> unavailableSchools,
             SyncConfiguration configuration,
             FileHelper fileHelper,
-            BlobContainerClient containerClient,
+            DatasetPublisher publisher,
             HashSet<Guid> failedSchools,
             CancellationToken cancellationToken)
         {
@@ -475,10 +492,9 @@ namespace Somtoday2MicrosoftSDS
                 BlobPathHelper.Combine(availableScope.BasePrefix, "v1"),
                 participantSchoolUuids,
                 failedSchools,
-                () => fileHelper.SaveEmptyV1ToBlobAsync(
-                    containerClient,
+                () => publisher.PublishAsync(
+                    fileHelper.CreateEmptyV1Dataset(configuration.EnableGuardianSync),
                     BlobPathHelper.Combine(availableScope.BasePrefix, "v1"),
-                    configuration.EnableGuardianSync,
                     cancellationToken),
                 cancellationToken);
 
@@ -487,10 +503,9 @@ namespace Somtoday2MicrosoftSDS
                 BlobPathHelper.Combine(availableScope.BasePrefix, "v2"),
                 participantSchoolUuids,
                 failedSchools,
-                () => fileHelper.SaveEmptyV2ToBlobAsync(
-                    containerClient,
+                () => publisher.PublishAsync(
+                    fileHelper.CreateEmptyV2Dataset(configuration.EnableGuardianSync),
                     BlobPathHelper.Combine(availableScope.BasePrefix, "v2"),
-                    configuration.EnableGuardianSync,
                     cancellationToken),
                 cancellationToken);
         }
@@ -500,14 +515,27 @@ namespace Somtoday2MicrosoftSDS
             string blobPrefix,
             IReadOnlyList<Guid> participantSchoolUuids,
             HashSet<Guid> failedSchools,
-            Func<Task> publish,
+            Func<Task<DatasetPublicationResult>> publish,
             CancellationToken cancellationToken)
         {
             try
             {
-                await publish();
+                DatasetPublicationResult result = await publish();
+                if (result == DatasetPublicationResult.Failed)
+                {
+                    failedSchools.UnionWith(participantSchoolUuids);
+                    _logger.LogError(
+                        "Publication failed for {SdsVersion} dataset at {BlobPrefix} for Somtoday schools {SchoolUuids}; the previous complete app dataset was restored",
+                        version,
+                        blobPrefix,
+                        string.Join(", ", participantSchoolUuids));
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (PublicationRollbackException)
             {
                 throw;
             }
