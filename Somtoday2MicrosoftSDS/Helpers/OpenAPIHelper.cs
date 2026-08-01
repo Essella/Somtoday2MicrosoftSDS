@@ -85,8 +85,26 @@ namespace Somtoday2MicrosoftSDS.Helpers
 
         internal async Task<Instelling> GetInstellingAsync(CancellationToken cancellationToken = default)
         {
-            InstellingResponse response = await somOpenApiClient.InstellingAsync(null, null, cancellationToken);
-            return SelectInstitution(response.Instellingen, schoolUUID);
+            IReadOnlyList<Instelling> institutions = await GetPublicInstitutionsAsync(
+                httpClientFactory,
+                cancellationToken);
+            return SelectInstitution(institutions, schoolUUID);
+        }
+
+        internal static async Task<IReadOnlyList<Instelling>> GetPublicInstitutionsAsync(
+            IHttpClientFactory httpClientFactory,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(httpClientFactory);
+
+            using HttpClient httpClient = httpClientFactory.CreateClient();
+            SomOpenApiClient publicClient = new(httpClient)
+            {
+                BaseUrl = SomEnvironmentConfig.Prod.Url
+            };
+
+            InstellingResponse response = await publicClient.InstellingAsync(null, null, cancellationToken);
+            return response.Instellingen.ToArray();
         }
 
         internal static Instelling SelectInstitution(IEnumerable<Instelling> institutions, Guid schoolUuid)
@@ -104,6 +122,19 @@ namespace Somtoday2MicrosoftSDS.Helpers
             if (string.IsNullOrWhiteSpace(matchingInstitutions[0].Afkorting))
             {
                 throw new InvalidOperationException($"Somtoday institution {schoolUuid} has no abbreviation");
+            }
+
+            try
+            {
+                BlobPathHelper.SanitizeSegment(
+                    matchingInstitutions[0].Afkorting,
+                    "institution abbreviation");
+            }
+            catch (ArgumentException ex)
+            {
+                throw new InvalidOperationException(
+                    $"Somtoday institution {schoolUuid} has an invalid abbreviation",
+                    ex);
             }
 
             return matchingInstitutions[0];

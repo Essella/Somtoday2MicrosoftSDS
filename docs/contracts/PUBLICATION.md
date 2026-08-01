@@ -4,7 +4,9 @@ This document defines confirmed intended output grouping and Blob publication be
 
 ## Institution abbreviation source
 
-The public production endpoint at `https://api.somtoday.nl/rest/v1/connect/instelling` is the authoritative source of `Instelling.Afkorting` for the application and operators, even when synchronization data comes from TEST, ACCEPTATIE, or NIGHTLY.
+The public production endpoint at `https://api.somtoday.nl/rest/v1/connect/instelling` is the authoritative source of `Instelling.Afkorting` for the application and operators, even when synchronization data comes from TEST, ACCEPTATIE, or NIGHTLY. Retrieve this list once per run through a separate unauthenticated client and preserve application cancellation.
+
+Each configured institution UUID must match exactly one public record whose abbreviation is valid for path planning. Use that public record's name and abbreviation for logging and paths. A missing, duplicate, or invalid match fails only that institution. If retrieval of the complete public list fails, abort the run before publishing any SDS dataset.
 
 ## Output grouping
 
@@ -22,11 +24,17 @@ Paths below the configured `Output:Folder` prefix are:
 | `false` | `true` | `{LocationAfkorting}/v1|v2/{FileName}` | One dataset per location abbreviation and SDS version |
 | `true` | `true` | `{InstitutionAfkorting}/{LocationAfkorting}/v1|v2/{FileName}` | One dataset per selected location and SDS version under its institution |
 
+Every planned output scope always schedules and attempts both the `v1` and `v2` publication units from the same included locations. The layout settings change only institution/location grouping; they cannot select, disable, or exclude an SDS version.
+
 Slash and backslash characters in abbreviations become `_`. Paths are compared case-insensitively.
 
 An institution folder is named from the matching public `Instelling.Afkorting`; a location folder is named from `Vestiging.Afkorting`.
 
 When institution separation is disabled and equal sanitized location abbreviations occur in different institutions, only the colliding folders are named `{InstitutionAfkorting}_{LocationAfkorting}`. Other unresolved output-path conflicts fail the affected institution.
+
+Plan location folder names from all selected locations before normal-mode population eligibility is evaluated. A location therefore keeps its planned folder name when another selected location is later omitted or its institution fails during data download.
+
+If public matching, institution discovery, output-layout validation, or data download fails for an institution, omit that institution from combined publication scopes, continue with the successfully resolved subset, and fail the run. Publishing a successful subset can remove the failed institution's earlier rows from a combined live dataset.
 
 ## Population eligibility and retained output
 
@@ -34,9 +42,17 @@ Normal-mode datasets contain only locations with at least one exportable class u
 
 Header-only mode is exempt from normal-mode population eligibility and publishes every selected scope.
 
+## Grouped dataset assembly
+
+Transform all included locations in publication-plan order into one dataset. V1 and V2.1 apply the grouped identity rules in the [export contract](EXPORT.md#grouped-dataset-identities). Exact duplicate relationship, role, roster, and enrollment rows are emitted once.
+
+If different Somtoday classes map case-insensitively to the same SDS class identifier, generation of the affected SDS-version publication unit fails and its existing live output remains unchanged. Do not alter the identifier automatically.
+
+Conversion and upload results are failure-isolated per planned scope and SDS version. A conversion failure blocks that complete publication unit; a conversion or upload failure marks every participating institution as failed and does not prevent the mandatory attempt for the other SDS version or another output scope.
+
 ## Publication unit and staging
 
-Each SDS-version dataset from the table is an independent publication unit.
+Each mandatory SDS-version dataset from the table is a separate, failure-isolated publication unit. This separation does not make either version optional.
 
 1. Generate its complete CSV set successfully in memory.
 2. Upload the complete set to staging before overwriting live output.
@@ -65,4 +81,4 @@ Automatic published-output cleanup is otherwise intentionally limited. Output be
 
 ## Current implementation references
 
-See `DEV-003`, `DEV-004`, `DEV-006`, and `DEV-007` in [the deviation register](../DEVIATIONS.md).
+See `DEV-006` and `DEV-007` in [the deviation register](../DEVIATIONS.md).

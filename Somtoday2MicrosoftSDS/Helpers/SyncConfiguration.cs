@@ -14,6 +14,8 @@ namespace Somtoday2MicrosoftSDS.Helpers
         string BlobContainer,
         string OutputPrefix,
         bool GenerateEmptyCsv,
+        bool SeparateByInstitution,
+        bool SeparateByLocation,
         bool EnableGuardianSync)
     {
         internal static bool TryCreate(
@@ -117,6 +119,8 @@ namespace Somtoday2MicrosoftSDS.Helpers
                     blobContainer.Trim(),
                     outputPrefix,
                     configuration.GetValue<bool>("Output:GenerateEmptyCsv"),
+                    configuration.GetValue("Output:SeparateByInstitution", true),
+                    configuration.GetValue("Output:SeparateByLocation", false),
                     configuration.GetValue<bool>("SchoolDataSync:EnableGuardianSync"))
                 : null;
 

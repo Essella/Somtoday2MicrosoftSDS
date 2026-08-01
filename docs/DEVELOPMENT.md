@@ -40,7 +40,7 @@ The runner enables detailed console output so successful, skipped, and failed te
 | Method and path | Coverage |
 |---|---|
 | `POST /oauth2/token?organisation={schoolUuid}` | Client-credentials authentication |
-| `GET /rest/v1/connect/instelling` | Configured institution |
+| Unauthenticated `GET https://api.somtoday.nl/rest/v1/connect/instelling` | Public production institution list and abbreviation lookup |
 | `GET /rest/v1/connect/vestiging` | All permitted locations |
 | `GET /rest/v1/connect/vestiging/{vestigingUuid}/lesgroep/` | Current-year groups, paginated |
 | `GET /rest/v1/connect/vestiging/{vestigingUuid}/medewerker` | Current-year employees, paginated |

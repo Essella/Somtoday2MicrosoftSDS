@@ -26,6 +26,8 @@ public class CoreBehaviorTests
         Assert.True(string.IsNullOrEmpty(configuration["KeyVault:VaultUri"]));
         Assert.True(string.IsNullOrEmpty(configuration["Storage:AzureBlob:ServiceUri"]));
         Assert.True(string.IsNullOrEmpty(configuration["Storage:AzureBlob:ConnectionString"]));
+        Assert.True(configuration.GetValue<bool>("Output:SeparateByInstitution"));
+        Assert.False(configuration.GetValue<bool>("Output:SeparateByLocation"));
         Assert.False(SyncConfiguration.TryCreate(
             configuration,
             resolvedClientSecret: string.Empty,
@@ -75,6 +77,41 @@ public class CoreBehaviorTests
                 out string[] errors),
             string.Join(Environment.NewLine, errors));
         Assert.Equal(BlobAuthenticationMode.ConnectionString, BlobClientFactory.GetAuthenticationMode(result));
+    }
+
+    [Fact]
+    public void OutputGroupingUsesConfirmedDefaultsAndAcceptsOverrides()
+    {
+        IConfiguration defaults = CreateConfiguration(new Dictionary<string, string>
+        {
+            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString()
+        });
+        IConfiguration overrides = CreateConfiguration(new Dictionary<string, string>
+        {
+            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
+            ["Output:SeparateByInstitution"] = "false",
+            ["Output:SeparateByLocation"] = "true"
+        });
+
+        Assert.True(SyncConfiguration.TryCreate(
+            defaults,
+            "client-secret",
+            true,
+            out SyncConfiguration defaultResult,
+            out string[] defaultErrors),
+            string.Join(Environment.NewLine, defaultErrors));
+        Assert.True(defaultResult.SeparateByInstitution);
+        Assert.False(defaultResult.SeparateByLocation);
+
+        Assert.True(SyncConfiguration.TryCreate(
+            overrides,
+            "client-secret",
+            true,
+            out SyncConfiguration overrideResult,
+            out string[] overrideErrors),
+            string.Join(Environment.NewLine, overrideErrors));
+        Assert.False(overrideResult.SeparateByInstitution);
+        Assert.True(overrideResult.SeparateByLocation);
     }
 
     [Fact]
@@ -157,24 +194,46 @@ public class CoreBehaviorTests
     public void EnvironmentVariablesOverrideJsonStyleConfiguration()
     {
         const string prefix = "S2MSDS_TEST_";
-        const string variableName = prefix + "Somtoday__ClientId";
-        Environment.SetEnvironmentVariable(variableName, "client-from-environment");
+        const string clientVariableName = prefix + "Somtoday__ClientId";
+        const string institutionVariableName = prefix + "Output__SeparateByInstitution";
+        const string locationVariableName = prefix + "Output__SeparateByLocation";
+        Environment.SetEnvironmentVariable(clientVariableName, "client-from-environment");
+        Environment.SetEnvironmentVariable(institutionVariableName, "false");
+        Environment.SetEnvironmentVariable(locationVariableName, "true");
 
         try
         {
             IConfiguration configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string>
                 {
-                    ["Somtoday:ClientId"] = "client-from-json"
+                    ["Somtoday:Environment"] = "PROD",
+                    ["Somtoday:ClientId"] = "client-from-json",
+                    ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
+                    ["Storage:AzureBlob:ConnectionString"] = "UseDevelopmentStorage=true",
+                    ["Storage:AzureBlob:Container"] = "sds",
+                    ["Output:Folder"] = "sds/output",
+                    ["Output:SeparateByInstitution"] = "true",
+                    ["Output:SeparateByLocation"] = "false"
                 })
                 .AddEnvironmentVariables(prefix)
                 .Build();
 
             Assert.Equal("client-from-environment", configuration["Somtoday:ClientId"]);
+            Assert.True(SyncConfiguration.TryCreate(
+                configuration,
+                "client-secret",
+                isDevelopment: true,
+                out SyncConfiguration result,
+                out string[] errors),
+                string.Join(Environment.NewLine, errors));
+            Assert.False(result.SeparateByInstitution);
+            Assert.True(result.SeparateByLocation);
         }
         finally
         {
-            Environment.SetEnvironmentVariable(variableName, null);
+            Environment.SetEnvironmentVariable(clientVariableName, null);
+            Environment.SetEnvironmentVariable(institutionVariableName, null);
+            Environment.SetEnvironmentVariable(locationVariableName, null);
         }
     }
 
@@ -257,6 +316,9 @@ public class CoreBehaviorTests
             FirstSchoolUuid));
         Assert.Throws<InvalidOperationException>(() => OpenAPIHelper.SelectInstitution(
             [Institution(FirstSchoolUuid, " ")],
+            FirstSchoolUuid));
+        Assert.Throws<InvalidOperationException>(() => OpenAPIHelper.SelectInstitution(
+            [Institution(FirstSchoolUuid, "..")],
             FirstSchoolUuid));
     }
 

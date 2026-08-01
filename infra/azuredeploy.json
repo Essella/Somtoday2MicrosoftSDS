@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.45.15.27210",
-      "templateHash": "8566851409800635415"
+      "templateHash": "7764739892142609815"
     }
   },
   "parameters": {
@@ -185,6 +185,20 @@
       "defaultValue": false,
       "metadata": {
         "description": "Altijd lege CSV-bestanden genereren."
+      }
+    },
+    "separateByInstitution": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Maak een afzonderlijke uitvoermap per Somtoday-instelling."
+      }
+    },
+    "separateByLocation": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Maak een afzonderlijke uitvoermap per Somtoday-vestiging."
       }
     },
     "tags": {
@@ -369,7 +383,7 @@
             {
               "name": "[variables('containerName')]",
               "image": "[parameters('imageReference')]",
-              "env": "[concat(createArray(createObject('name', 'DOTNET_ENVIRONMENT', 'value', 'Production'), createObject('name', 'AZURE_TOKEN_CREDENTIALS', 'value', 'ManagedIdentityCredential'), createObject('name', 'KeyVault__VaultUri', 'value', reference(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), '2023-07-01').vaultUri), createObject('name', 'KeyVault__SomtodayClientSecretName', 'value', parameters('somtodayClientSecretName')), createObject('name', 'Somtoday__ClientId', 'value', parameters('somtodayClientId')), createObject('name', 'Somtoday__Environment', 'value', parameters('somtodayEnvironment')), createObject('name', 'Storage__AzureBlob__ServiceUri', 'value', reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.blob), createObject('name', 'Storage__AzureBlob__Container', 'value', parameters('blobContainerName')), createObject('name', 'Output__Folder', 'value', parameters('outputFolder')), createObject('name', 'Output__GenerateEmptyCsv', 'value', string(parameters('generateEmptyCsv'))), createObject('name', 'SchoolDataSync__EnableGuardianSync', 'value', string(parameters('enableGuardianSync'))), createObject('name', 'UsernameFormat__Teacher', 'value', parameters('teacherUsernameFormat')), createObject('name', 'UsernameFormat__Student', 'value', parameters('studentUsernameFormat'))), variables('schoolEnvironmentVariables'), variables('includedLocationEnvironmentVariables'), variables('excludedLocationEnvironmentVariables'), variables('bootstrapEnvironmentVariables'))]",
+              "env": "[concat(createArray(createObject('name', 'DOTNET_ENVIRONMENT', 'value', 'Production'), createObject('name', 'AZURE_TOKEN_CREDENTIALS', 'value', 'ManagedIdentityCredential'), createObject('name', 'KeyVault__VaultUri', 'value', reference(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), '2023-07-01').vaultUri), createObject('name', 'KeyVault__SomtodayClientSecretName', 'value', parameters('somtodayClientSecretName')), createObject('name', 'Somtoday__ClientId', 'value', parameters('somtodayClientId')), createObject('name', 'Somtoday__Environment', 'value', parameters('somtodayEnvironment')), createObject('name', 'Storage__AzureBlob__ServiceUri', 'value', reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.blob), createObject('name', 'Storage__AzureBlob__Container', 'value', parameters('blobContainerName')), createObject('name', 'Output__Folder', 'value', parameters('outputFolder')), createObject('name', 'Output__GenerateEmptyCsv', 'value', string(parameters('generateEmptyCsv'))), createObject('name', 'Output__SeparateByInstitution', 'value', string(parameters('separateByInstitution'))), createObject('name', 'Output__SeparateByLocation', 'value', string(parameters('separateByLocation'))), createObject('name', 'SchoolDataSync__EnableGuardianSync', 'value', string(parameters('enableGuardianSync'))), createObject('name', 'UsernameFormat__Teacher', 'value', parameters('teacherUsernameFormat')), createObject('name', 'UsernameFormat__Student', 'value', parameters('studentUsernameFormat'))), variables('schoolEnvironmentVariables'), variables('includedLocationEnvironmentVariables'), variables('excludedLocationEnvironmentVariables'), variables('bootstrapEnvironmentVariables'))]",
               "resources": {
                 "cpu": "[json(parameters('cpu'))]",
                 "memory": "[parameters('memory')]"

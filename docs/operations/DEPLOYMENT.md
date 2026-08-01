@@ -20,12 +20,14 @@ The identity receives `Storage Blob Data Contributor` on the output container an
 
 Defaults are public `latest` image, `0 1 * * *` UTC schedule, one replica, 0.5 vCPU, 1 GiB memory, 3,600-second Job timeout, and one Container Apps retry. Pin production deployments to a release tag or digest. Container Apps cron schedules are evaluated in UTC.
 
+Output is separated by institution by default and combines selected locations within each institution. The `separateByInstitution` and `separateByLocation` deployment parameters map to the application's independent output-layout settings.
+
 ## Azure Portal
 
 The Deploy to Azure button in the Dutch [README](../../README.md) uses `infra/azuredeploy.json`. `infra/main.bicep` remains the source; do not edit the generated ARM JSON manually. CI verifies that both representations remain aligned.
 
 1. Select the deployment button and choose subscription, resource group, and region.
-2. Supply at least `schoolUuids` as a JSON array and `somtodayClientId`.
+2. Supply at least `schoolUuids` as a JSON array and `somtodayClientId`; optionally adjust the two output-layout parameters.
 3. Supply `somtodayClientSecret` only for initial bootstrap or rotation.
 4. After RBAC propagation, start one manual run and inspect logs and Blob output.
 5. Redeploy the same resource group and `namePrefix` without `somtodayClientSecret`.

@@ -97,6 +97,12 @@ param outputFolder string = 'sds/output'
 @description('Altijd lege CSV-bestanden genereren.')
 param generateEmptyCsv bool = false
 
+@description('Maak een afzonderlijke uitvoermap per Somtoday-instelling.')
+param separateByInstitution bool = true
+
+@description('Maak een afzonderlijke uitvoermap per Somtoday-vestiging.')
+param separateByLocation bool = false
+
 @description('Tags voor alle resources die tags ondersteunen.')
 param tags object = {
   application: 'Somtoday2MicrosoftSDS'
@@ -151,6 +157,14 @@ var baseEnvironmentVariables = [
   {
     name: 'Output__GenerateEmptyCsv'
     value: string(generateEmptyCsv)
+  }
+  {
+    name: 'Output__SeparateByInstitution'
+    value: string(separateByInstitution)
+  }
+  {
+    name: 'Output__SeparateByLocation'
+    value: string(separateByLocation)
   }
   {
     name: 'SchoolDataSync__EnableGuardianSync'

@@ -136,6 +136,23 @@ public class CsvConversionTests
         Assert.EndsWith("2026-2027", v1ClassId, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void V1AndV2PreserveTheirExistingLocationPrefixChecks()
+    {
+        VestigingModel model = CreateModel();
+        model.Vestiging.Afkorting = "A_";
+        model.Lesgroepen[0].Naam = "A B";
+
+        ResolvedExportPopulation population = ExportPopulationResolver.Resolve(model);
+        string v1ClassId = Assert.Single(
+            new SDScsvHelperV1(population, RunDate).ConvertToSDSCSV().Sections).SISid;
+        string v2ClassId = Assert.Single(
+            new SDScsvHelperV2(population, RunDate).ConvertToSDSCSV().Classes).sourcedId;
+
+        Assert.Equal("a_A_B2026-2027", v1ClassId);
+        Assert.Equal("A_B2026-2027", v2ClassId);
+    }
+
     private static VestigingModel CreateModel(params OuderVerzorger[] guardians)
     {
         Guid teacherId = Guid.NewGuid();

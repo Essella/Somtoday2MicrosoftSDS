@@ -9,6 +9,8 @@ namespace Somtoday2MicrosoftSDS.Tests;
 
 public class OpenApiAuthenticationTests
 {
+    private static readonly Guid SchoolUuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
     [Fact]
     public async Task OAuthFormIsEncodedAndAccessTokenIsNeverLogged()
     {
@@ -116,6 +118,83 @@ public class OpenApiAuthenticationTests
         Assert.DoesNotContain(logger.Messages, message => message.Contains("client-secret", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("TEST")]
+    [InlineData("ACCEPTATIE")]
+    public async Task InstitutionLookupUsesUnauthenticatedProductionEndpointForNonProductionEnvironment(
+        string environment)
+    {
+        RecordingHandler handler = new(_ => JsonResponse(
+            $$"""
+            {"instellingen":[{"uuid":"{{SchoolUuid}}","naam":"Public school","afkorting":"PUBLIC","brins":[]}]}
+            """));
+        OpenAPIHelper helper = new(
+            "client-id",
+            "client-secret",
+            SchoolUuid,
+            environment == "TEST" ? SomEnvironmentConfig.Test : SomEnvironmentConfig.Acceptatie,
+            new RecordingHttpClientFactory(handler),
+            new CapturingLogger());
+
+        Instelling institution = await helper.GetInstellingAsync(CancellationToken.None);
+
+        Assert.Equal("PUBLIC", institution.Afkorting);
+        CapturedRequest request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal(
+            "https://api.somtoday.nl/rest/v1/connect/instelling",
+            request.Uri.AbsoluteUri);
+        Assert.Null(request.Authorization);
+    }
+
+    [Fact]
+    public async Task PublicInstitutionLookupPropagatesCancellation()
+    {
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+        RecordingHandler handler = new(_ => JsonResponse("{\"instellingen\":[]}"));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            OpenAPIHelper.GetPublicInstitutionsAsync(
+                new RecordingHttpClientFactory(handler),
+                cancellation.Token));
+    }
+
+    [Fact]
+    public async Task PublicInstitutionLookupFailureIsPropagated()
+    {
+        RecordingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+
+        await Assert.ThrowsAsync<ApiException>(() =>
+            OpenAPIHelper.GetPublicInstitutionsAsync(
+                new RecordingHttpClientFactory(handler),
+                CancellationToken.None));
+
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task OnePublicInstitutionRequestCanResolveAllConfiguredSchools()
+    {
+        Guid secondSchoolUuid = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        RecordingHandler handler = new(_ => JsonResponse(
+            $$"""
+            {"instellingen":[
+              {"uuid":"{{SchoolUuid}}","naam":"First","afkorting":"FIRST","brins":[]},
+              {"uuid":"{{secondSchoolUuid}}","naam":"Second","afkorting":"SECOND","brins":[]}
+            ]}
+            """));
+
+        IReadOnlyList<Instelling> institutions = await OpenAPIHelper.GetPublicInstitutionsAsync(
+            new RecordingHttpClientFactory(handler),
+            CancellationToken.None);
+
+        Assert.Equal("FIRST", OpenAPIHelper.SelectInstitution(institutions, SchoolUuid).Afkorting);
+        Assert.Equal("SECOND", OpenAPIHelper.SelectInstitution(institutions, secondSchoolUuid).Afkorting);
+        CapturedRequest request = Assert.Single(handler.Requests);
+        Assert.Null(request.Authorization);
+    }
+
     [Fact]
     public async Task EmptySourceCollectionsStillReturnSelectedLocationModel()
     {
@@ -207,10 +286,18 @@ public class OpenApiAuthenticationTests
 
         internal string RequestBody { get; private set; }
 
+        internal List<CapturedRequest> Requests { get; } = [];
+
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(new CapturedRequest(
+                request.Method,
+                request.RequestUri,
+                request.Headers.Authorization?.ToString()));
+
             if (request.Content is not null)
             {
                 RequestBody = await request.Content.ReadAsStringAsync(cancellationToken);
@@ -219,6 +306,11 @@ public class OpenApiAuthenticationTests
             return responseFactory(request);
         }
     }
+
+    private sealed record CapturedRequest(
+        HttpMethod Method,
+        Uri Uri,
+        string Authorization);
 
     private sealed class CapturingLogger : ILogger<OpenAPIHelper>
     {

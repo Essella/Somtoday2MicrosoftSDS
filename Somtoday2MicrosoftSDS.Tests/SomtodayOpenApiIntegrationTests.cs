@@ -20,7 +20,7 @@ public sealed class SomtodayOpenApiIntegrationTests : IClassFixture<SomtodayOpen
         Assert.True(fixture.Api.IsConnected);
     }
 
-    [SomtodayIntegrationFact("GET /rest/v1/connect/instelling returns the configured institution")]
+    [SomtodayIntegrationFact("Unauthenticated production GET /rest/v1/connect/instelling returns the configured institution")]
     public async Task ConfiguredInstitutionCanBeRetrieved()
     {
         Instelling institution = await fixture.ExecuteSafelyAsync(

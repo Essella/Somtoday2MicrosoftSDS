@@ -142,8 +142,8 @@ public class ExportPopulationResolverTests
         Assert.Empty(population.Guardians);
         Assert.False(Program.ShouldPublishLocation(population, "Test school", logger));
         Assert.Contains(logger.Messages, message =>
-            message.Contains("Skipping Test school/Test location", StringComparison.Ordinal)
-            && message.Contains("existing Blob output is unchanged", StringComparison.Ordinal));
+            message.Contains("Excluding Test school/Test location", StringComparison.Ordinal)
+            && message.Contains("from planned datasets", StringComparison.Ordinal));
     }
 
     private static VestigingModel CreateModel(

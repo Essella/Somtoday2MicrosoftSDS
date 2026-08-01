@@ -9,6 +9,8 @@ param schoolUuids = [
 ]
 param somtodayClientId = '00000000-0000-0000-0000-000000000000'
 param somtodayEnvironment = 'PROD'
+param separateByInstitution = true
+param separateByLocation = false
 
 // Wordt uitsluitend tijdens compilatie uit de huidige procesenvironment gelezen.
 // Zonder de environment variable blijft de secure parameter leeg en verwijdert een

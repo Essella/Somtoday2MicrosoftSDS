@@ -15,9 +15,13 @@ namespace Somtoday2MicrosoftSDS
         private sealed record SchoolSyncContext(
             Guid SchoolUuid,
             string SchoolName,
-            string SchoolPathSegment,
+            string InstitutionAbbreviation,
             OpenAPIHelper Api,
             List<Vestiging> Locations);
+
+        private sealed record ResolvedLocationContext(
+            Guid SchoolUuid,
+            ResolvedExportPopulation Population);
 
         internal static bool ShouldGenerateEmptyCsv(string[] args, bool configuredGenerateEmptyCsv, DateOnly today)
         {
@@ -94,14 +98,22 @@ namespace Somtoday2MicrosoftSDS
                 IHttpClientFactory httpClientFactory = host.Services.GetRequiredService<IHttpClientFactory>();
                 ILogger<OpenAPIHelper> apiLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<OpenAPIHelper>();
                 HashSet<Guid> failedSchools = [];
+                HashSet<Guid> unavailableSchools = [];
                 List<SchoolSyncContext> schools = [];
+                IReadOnlyList<Instelling> publicInstitutions = await OpenAPIHelper.GetPublicInstitutionsAsync(
+                    httpClientFactory,
+                    cancellationToken);
 
                 foreach (Guid schoolUuid in configuration.SchoolUuids)
                 {
                     try
                     {
+                        Instelling publicInstitution = OpenAPIHelper.SelectInstitution(
+                            publicInstitutions,
+                            schoolUuid);
                         SchoolSyncContext school = await DiscoverSchoolAsync(
                             schoolUuid,
+                            publicInstitution,
                             configuration,
                             httpClientFactory,
                             apiLogger,
@@ -115,6 +127,7 @@ namespace Somtoday2MicrosoftSDS
                     catch (Exception ex)
                     {
                         failedSchools.Add(schoolUuid);
+                        unavailableSchools.Add(schoolUuid);
                         _logger.LogError(
                             "Failed to discover Somtoday school {SchoolUuid} ({Error})",
                             schoolUuid,
@@ -122,50 +135,98 @@ namespace Somtoday2MicrosoftSDS
                     }
                 }
 
-                RemoveSchoolPathCollisions(schools, failedSchools);
+                OutputLayoutPlan outputPlan = OutputLayoutPlanner.Create(
+                    schools.Select(school => new OutputLayoutSchool(
+                        school.SchoolUuid,
+                        school.InstitutionAbbreviation,
+                        school.Locations)),
+                    configuration.OutputPrefix,
+                    configuration.SeparateByInstitution,
+                    configuration.SeparateByLocation);
 
-                foreach (SchoolSyncContext school in schools)
+                failedSchools.UnionWith(outputPlan.FailedSchoolUuids);
+                unavailableSchools.UnionWith(outputPlan.FailedSchoolUuids);
+                foreach (OutputLayoutIssue issue in outputPlan.Issues)
                 {
-                    try
-                    {
-                        if (generateEmptyCsv)
-                        {
-                            await SaveEmptySchoolOutputAsync(
-                                school,
-                                configuration,
-                                fileHelper,
-                                containerClient,
-                                cancellationToken);
-                        }
-                        else
-                        {
-                            await SaveSchoolOutputAsync(
-                                school,
-                                configuration,
-                                fileHelper,
-                                containerClient,
-                                runDate,
-                                cancellationToken);
-                        }
+                    _logger.LogError(
+                        "Output layout failed for Somtoday schools {SchoolUuids}: {Reason}",
+                        string.Join(", ", issue.SchoolUuids),
+                        issue.Message);
+                }
 
-                        _logger.LogInformation(
-                            "School sync completed successfully: {SchoolName} ({SchoolUuid})",
-                            school.SchoolName,
-                            school.SchoolUuid);
-                    }
-                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                Dictionary<(Guid SchoolUuid, Guid LocationUuid), ResolvedLocationContext> populations = [];
+                if (!generateEmptyCsv)
+                {
+                    foreach (SchoolSyncContext school in schools.Where(
+                        school => !unavailableSchools.Contains(school.SchoolUuid)))
                     {
-                        throw;
+                        try
+                        {
+                            IReadOnlyList<ResolvedLocationContext> schoolPopulations =
+                                await DownloadSchoolPopulationsAsync(
+                                    school,
+                                    configuration,
+                                    cancellationToken);
+
+                            foreach (ResolvedLocationContext population in schoolPopulations)
+                            {
+                                populations.Add(
+                                    (population.SchoolUuid, population.Population.Vestiging.Uuid),
+                                    population);
+                            }
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            failedSchools.Add(school.SchoolUuid);
+                            unavailableSchools.Add(school.SchoolUuid);
+                            _logger.LogError(
+                                "School data download failed: {SchoolName} ({SchoolUuid}) ({Error})",
+                                school.SchoolName,
+                                school.SchoolUuid,
+                                SafeExceptionSummary.Create(ex));
+                        }
                     }
-                    catch (Exception ex)
+
+                }
+
+                foreach (OutputPublicationScope scope in outputPlan.Scopes)
+                {
+                    if (generateEmptyCsv)
                     {
-                        failedSchools.Add(school.SchoolUuid);
-                        _logger.LogError(
-                            "School sync failed: {SchoolName} ({SchoolUuid}) ({Error})",
-                            school.SchoolName,
-                            school.SchoolUuid,
-                            SafeExceptionSummary.Create(ex));
+                        await PublishEmptyScopeAsync(
+                            scope,
+                            unavailableSchools,
+                            configuration,
+                            fileHelper,
+                            containerClient,
+                            failedSchools,
+                            cancellationToken);
                     }
+                    else
+                    {
+                        await PublishNormalScopeAsync(
+                            scope,
+                            unavailableSchools,
+                            populations,
+                            runDate,
+                            fileHelper,
+                            containerClient,
+                            failedSchools,
+                            cancellationToken);
+                    }
+                }
+
+                foreach (SchoolSyncContext school in schools.Where(
+                    school => !failedSchools.Contains(school.SchoolUuid)))
+                {
+                    _logger.LogInformation(
+                        "School sync completed successfully: {SchoolName} ({SchoolUuid})",
+                        school.SchoolName,
+                        school.SchoolUuid);
                 }
 
                 if (failedSchools.Count > 0)
@@ -201,6 +262,7 @@ namespace Somtoday2MicrosoftSDS
 
         private static async Task<SchoolSyncContext> DiscoverSchoolAsync(
             Guid schoolUuid,
+            Instelling institution,
             SyncConfiguration configuration,
             IHttpClientFactory httpClientFactory,
             ILogger<OpenAPIHelper> apiLogger,
@@ -212,26 +274,10 @@ namespace Somtoday2MicrosoftSDS
                 httpClientFactory,
                 apiLogger,
                 cancellationToken);
-            Instelling institution = await api.GetInstellingAsync(cancellationToken);
-            string schoolPathSegment = BlobPathHelper.SanitizeSegment(institution.Afkorting, "school abbreviation");
             List<Vestiging> locations = await api.GetSelectedVestigingenAsync(
                 configuration.IncludedLocationCodes,
                 configuration.ExcludedLocationCodes,
                 cancellationToken);
-
-            string[] collidingLocationPaths = locations
-                .GroupBy(
-                    location => BlobPathHelper.SanitizeSegment(location.Afkorting, "location abbreviation"),
-                    StringComparer.OrdinalIgnoreCase)
-                .Where(group => group.Count() > 1)
-                .Select(group => group.Key)
-                .ToArray();
-
-            if (collidingLocationPaths.Length > 0)
-            {
-                throw new InvalidOperationException(
-                    $"Multiple locations map to the same blob path segment: {string.Join(", ", collidingLocationPaths)}");
-            }
 
             _logger.LogInformation(
                 "Discovered school {SchoolName} ({SchoolUuid}) with {LocationCount} selected locations",
@@ -239,7 +285,12 @@ namespace Somtoday2MicrosoftSDS
                 schoolUuid,
                 locations.Count);
 
-            return new SchoolSyncContext(schoolUuid, institution.Naam, schoolPathSegment, api, locations);
+            return new SchoolSyncContext(
+                schoolUuid,
+                institution.Naam,
+                institution.Afkorting,
+                api,
+                locations);
         }
 
         private static async Task<OpenAPIHelper> ConnectWithRetryAsync(
@@ -282,39 +333,16 @@ namespace Somtoday2MicrosoftSDS
                 $"Failed to connect to Somtoday school {schoolUuid} after {MaxConnectionRetries} retries");
         }
 
-        private static void RemoveSchoolPathCollisions(List<SchoolSyncContext> schools, HashSet<Guid> failedSchools)
-        {
-            SchoolSyncContext[] collidingSchools = schools
-                .GroupBy(school => school.SchoolPathSegment, StringComparer.OrdinalIgnoreCase)
-                .Where(group => group.Count() > 1)
-                .SelectMany(group => group)
-                .ToArray();
-
-            foreach (SchoolSyncContext school in collidingSchools)
-            {
-                failedSchools.Add(school.SchoolUuid);
-                _logger.LogError(
-                    "School {SchoolName} ({SchoolUuid}) maps to duplicate blob path segment {SchoolPathSegment}",
-                    school.SchoolName,
-                    school.SchoolUuid,
-                    school.SchoolPathSegment);
-            }
-
-            schools.RemoveAll(school => failedSchools.Contains(school.SchoolUuid));
-        }
-
-        private static async Task SaveSchoolOutputAsync(
+        private static async Task<IReadOnlyList<ResolvedLocationContext>> DownloadSchoolPopulationsAsync(
             SchoolSyncContext school,
             SyncConfiguration configuration,
-            FileHelper fileHelper,
-            BlobContainerClient containerClient,
-            DateOnly runDate,
             CancellationToken cancellationToken)
         {
             List<VestigingModel> allInfo = await school.Api.DownloadAllInfoAsync(
                 school.Locations,
                 configuration.EnableGuardianSync,
                 cancellationToken);
+            List<ResolvedLocationContext> populations = [];
 
             foreach (VestigingModel info in allInfo)
             {
@@ -333,21 +361,10 @@ namespace Somtoday2MicrosoftSDS
                     continue;
                 }
 
-                string basePrefix = GetLocationPrefix(configuration, school, info.Vestiging);
-                string v1Prefix = BlobPathHelper.Combine(basePrefix, "v1");
-                string v2Prefix = BlobPathHelper.Combine(basePrefix, "v2");
-
-                await fileHelper.SaveV1ToBlobAsync(
-                    new SDScsvHelperV1(population, runDate).ConvertToSDSCSV(),
-                    containerClient,
-                    v1Prefix,
-                    cancellationToken);
-                await fileHelper.SaveV2ToBlobAsync(
-                    new SDScsvHelperV2(population, runDate).ConvertToSDSCSV(),
-                    containerClient,
-                    v2Prefix,
-                    cancellationToken);
+                populations.Add(new ResolvedLocationContext(school.SchoolUuid, population));
             }
+
+            return populations;
         }
 
         internal static bool ShouldPublishLocation(
@@ -361,46 +378,149 @@ namespace Somtoday2MicrosoftSDS
             }
 
             logger.LogWarning(
-                "Skipping {SchoolName}/{LocationName}: no class has a non-empty name, at least one resolved teacher, and at least one resolved student; existing Blob output is unchanged",
+                "Excluding {SchoolName}/{LocationName} from planned datasets: no class has a non-empty name, at least one resolved teacher, and at least one resolved student",
                 schoolName,
                 population.Vestiging.Naam);
             return false;
         }
 
-        private static async Task SaveEmptySchoolOutputAsync(
-            SchoolSyncContext school,
+        private static async Task PublishNormalScopeAsync(
+            OutputPublicationScope scope,
+            IReadOnlySet<Guid> unavailableSchools,
+            IReadOnlyDictionary<(Guid SchoolUuid, Guid LocationUuid), ResolvedLocationContext> populations,
+            DateOnly runDate,
+            FileHelper fileHelper,
+            BlobContainerClient containerClient,
+            HashSet<Guid> failedSchools,
+            CancellationToken cancellationToken)
+        {
+            OutputPublicationScope availableScope = scope.Excluding(unavailableSchools);
+            if (availableScope.SchoolUuids.Count == 0)
+            {
+                return;
+            }
+
+            ResolvedLocationContext[] includedLocations = availableScope.Locations
+                .Select(location => populations.TryGetValue(
+                    (location.SchoolUuid, location.Location.Uuid),
+                    out ResolvedLocationContext population)
+                    ? population
+                    : null)
+                .Where(population => population is not null)
+                .ToArray();
+
+            if (includedLocations.Length == 0)
+            {
+                _logger.LogWarning(
+                    "Skipping publication scope {BlobPrefix}: no selected location has an exportable class; existing Blob output is unchanged",
+                    availableScope.BasePrefix);
+                return;
+            }
+
+            Guid[] participantSchoolUuids = includedLocations
+                .Select(location => location.SchoolUuid)
+                .Distinct()
+                .ToArray();
+            ResolvedExportPopulation[] scopePopulations = includedLocations
+                .Select(location => location.Population)
+                .ToArray();
+
+            await PublishVersionAsync(
+                "V1",
+                BlobPathHelper.Combine(availableScope.BasePrefix, "v1"),
+                participantSchoolUuids,
+                failedSchools,
+                () => fileHelper.SaveV1ToBlobAsync(
+                    new SDScsvHelperV1(scopePopulations, runDate).ConvertToSDSCSV(),
+                    containerClient,
+                    BlobPathHelper.Combine(availableScope.BasePrefix, "v1"),
+                    cancellationToken),
+                cancellationToken);
+
+            await PublishVersionAsync(
+                "V2.1",
+                BlobPathHelper.Combine(availableScope.BasePrefix, "v2"),
+                participantSchoolUuids,
+                failedSchools,
+                () => fileHelper.SaveV2ToBlobAsync(
+                    new SDScsvHelperV2(scopePopulations, runDate).ConvertToSDSCSV(),
+                    containerClient,
+                    BlobPathHelper.Combine(availableScope.BasePrefix, "v2"),
+                    cancellationToken),
+                cancellationToken);
+        }
+
+        private static async Task PublishEmptyScopeAsync(
+            OutputPublicationScope scope,
+            IReadOnlySet<Guid> unavailableSchools,
             SyncConfiguration configuration,
             FileHelper fileHelper,
             BlobContainerClient containerClient,
+            HashSet<Guid> failedSchools,
             CancellationToken cancellationToken)
         {
-            _logger.LogInformation(
-                "Generating empty SDS CSV files with headers only for {SchoolName}",
-                school.SchoolName);
-
-            foreach (Vestiging location in school.Locations)
+            OutputPublicationScope availableScope = scope.Excluding(unavailableSchools);
+            IReadOnlyList<Guid> participantSchoolUuids = availableScope.SchoolUuids;
+            if (participantSchoolUuids.Count == 0)
             {
-                string basePrefix = GetLocationPrefix(configuration, school, location);
-                await fileHelper.SaveEmptyV1ToBlobAsync(
-                    containerClient,
-                    BlobPathHelper.Combine(basePrefix, "v1"),
-                    configuration.EnableGuardianSync,
-                    cancellationToken);
-                await fileHelper.SaveEmptyV2ToBlobAsync(
-                    containerClient,
-                    BlobPathHelper.Combine(basePrefix, "v2"),
-                    configuration.EnableGuardianSync,
-                    cancellationToken);
+                return;
             }
+
+            _logger.LogInformation(
+                "Generating empty SDS CSV files with headers only for scope {BlobPrefix}",
+                availableScope.BasePrefix);
+
+            await PublishVersionAsync(
+                "V1",
+                BlobPathHelper.Combine(availableScope.BasePrefix, "v1"),
+                participantSchoolUuids,
+                failedSchools,
+                () => fileHelper.SaveEmptyV1ToBlobAsync(
+                    containerClient,
+                    BlobPathHelper.Combine(availableScope.BasePrefix, "v1"),
+                    configuration.EnableGuardianSync,
+                    cancellationToken),
+                cancellationToken);
+
+            await PublishVersionAsync(
+                "V2.1",
+                BlobPathHelper.Combine(availableScope.BasePrefix, "v2"),
+                participantSchoolUuids,
+                failedSchools,
+                () => fileHelper.SaveEmptyV2ToBlobAsync(
+                    containerClient,
+                    BlobPathHelper.Combine(availableScope.BasePrefix, "v2"),
+                    configuration.EnableGuardianSync,
+                    cancellationToken),
+                cancellationToken);
         }
 
-        private static string GetLocationPrefix(
-            SyncConfiguration configuration,
-            SchoolSyncContext school,
-            Vestiging location)
+        private static async Task PublishVersionAsync(
+            string version,
+            string blobPrefix,
+            IReadOnlyList<Guid> participantSchoolUuids,
+            HashSet<Guid> failedSchools,
+            Func<Task> publish,
+            CancellationToken cancellationToken)
         {
-            string locationPathSegment = BlobPathHelper.SanitizeSegment(location.Afkorting, "location abbreviation");
-            return BlobPathHelper.Combine(configuration.OutputPrefix, school.SchoolPathSegment, locationPathSegment);
+            try
+            {
+                await publish();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failedSchools.UnionWith(participantSchoolUuids);
+                _logger.LogError(
+                    "Failed to publish {SdsVersion} dataset at {BlobPrefix} for Somtoday schools {SchoolUuids} ({Error})",
+                    version,
+                    blobPrefix,
+                    string.Join(", ", participantSchoolUuids),
+                    SafeExceptionSummary.Create(ex));
+            }
         }
     }
 }

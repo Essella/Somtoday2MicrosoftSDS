@@ -5,39 +5,151 @@ namespace Somtoday2MicrosoftSDS.Helpers
     internal class SDScsvHelperV1
     {
         private readonly SettingsHelper sh = new SettingsHelper();
-        private readonly ResolvedExportPopulation population;
+        private readonly IReadOnlyList<ResolvedExportPopulation> populations;
         private readonly DateOnly runDate;
 
         public SDScsvHelperV1(ResolvedExportPopulation population, DateOnly runDate)
+            : this([population], runDate)
         {
-            this.population = population;
+        }
+
+        public SDScsvHelperV1(
+            IReadOnlyList<ResolvedExportPopulation> populations,
+            DateOnly runDate)
+        {
+            this.populations = populations ?? throw new ArgumentNullException(nameof(populations));
             this.runDate = runDate;
         }
 
         internal SDScsvV1 ConvertToSDSCSV()
         {
-            SDScsvV1 result = new SDScsvV1
+            SDScsvV1 result = new();
+            Dictionary<string, School> schools = new(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, Guid> sectionSourceIds = new(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, Guardian> guardians = new(StringComparer.Ordinal);
+            HashSet<string> teacherRows = new(StringComparer.Ordinal);
+            HashSet<string> studentRows = new(StringComparer.Ordinal);
+            HashSet<string> teacherRosters = new(StringComparer.Ordinal);
+            HashSet<string> studentEnrollments = new(StringComparer.Ordinal);
+            HashSet<string> guardianRelationships = new(StringComparer.Ordinal);
+
+            foreach (ResolvedExportPopulation population in populations)
             {
-                Schools = GetSchools()
-            };
+                School school = GetSchool(population);
+                if (schools.TryGetValue(school.SISid, out School existingSchool))
+                {
+                    if (!string.Equals(existingSchool.Name, school.Name, StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "One Somtoday location maps to conflicting SDS V1 school records");
+                    }
+                }
+                else
+                {
+                    schools.Add(school.SISid, school);
+                    result.Schools.Add(school);
+                }
 
-            var classesInfo = GetClassesAndEnrollments();
+                var classesInfo = GetClassesAndEnrollments(population);
+                for (int index = 0; index < classesInfo.Sections.Count; index++)
+                {
+                    Section section = classesInfo.Sections[index];
+                    Guid sourceClassUuid = population.Classes[index].Source.Uuid;
+                    if (sectionSourceIds.TryGetValue(section.SISid, out Guid existingSourceClassUuid))
+                    {
+                        if (existingSourceClassUuid != sourceClassUuid)
+                        {
+                            throw new InvalidOperationException(
+                                "Multiple Somtoday classes map to the same SDS V1 class identifier");
+                        }
+                    }
+                    else
+                    {
+                        sectionSourceIds.Add(section.SISid, sourceClassUuid);
+                        result.Sections.Add(section);
+                    }
+                }
 
-            result.Sections = classesInfo.Sections;
-            result.Teachers = classesInfo.Teachers;
-            result.Students = classesInfo.Students;
-            result.TeacherRosters = classesInfo.TeacherRoster;
-            result.StudentEnrollments = classesInfo.StudentEnrollments;
+                foreach (Teacher teacher in classesInfo.Teachers)
+                {
+                    if (teacherRows.Add(CompositeKey(teacher.SISid, teacher.SISSchoolid)))
+                    {
+                        result.Teachers.Add(teacher);
+                    }
+                }
 
-            var guardianInfo = GetGuardiansAndRelationships();
+                foreach (Student student in classesInfo.Students)
+                {
+                    if (studentRows.Add(CompositeKey(student.SISid, student.SISSchoolid)))
+                    {
+                        result.Students.Add(student);
+                    }
+                }
 
-            result.User = guardianInfo.Guardians;
-            result.Guardianrelationship = guardianInfo.Guardianrelationships;
+                foreach (TeacherRoster roster in classesInfo.TeacherRoster)
+                {
+                    if (teacherRosters.Add(CompositeKey(roster.SISSectionid, roster.SISTeacherid)))
+                    {
+                        result.TeacherRosters.Add(roster);
+                    }
+                }
+
+                foreach (StudentEnrollment enrollment in classesInfo.StudentEnrollments)
+                {
+                    if (studentEnrollments.Add(CompositeKey(enrollment.SISSectionid, enrollment.SISStudentid)))
+                    {
+                        result.StudentEnrollments.Add(enrollment);
+                    }
+                }
+
+                var guardianInfo = GetGuardiansAndRelationships(population);
+                foreach (Guardian guardian in guardianInfo.Guardians)
+                {
+                    if (guardians.TryGetValue(guardian.SISid, out Guardian existingGuardian))
+                    {
+                        if (!GuardianRowsEqual(existingGuardian, guardian))
+                        {
+                            throw new InvalidOperationException(
+                                "One Somtoday guardian maps to conflicting SDS V1 user records");
+                        }
+                    }
+                    else
+                    {
+                        guardians.Add(guardian.SISid, guardian);
+                        result.User.Add(guardian);
+                    }
+                }
+
+                foreach (GuardianRelationship relationship in guardianInfo.Guardianrelationships)
+                {
+                    if (guardianRelationships.Add(CompositeKey(
+                        relationship.SISid,
+                        relationship.Email,
+                        relationship.Role)))
+                    {
+                        result.Guardianrelationship.Add(relationship);
+                    }
+                }
+            }
 
             return result;
         }
 
-        private (List<Guardian> Guardians, List<GuardianRelationship> Guardianrelationships) GetGuardiansAndRelationships()
+        private static string CompositeKey(params string[] values)
+        {
+            return string.Join('\u001f', values);
+        }
+
+        private static bool GuardianRowsEqual(Guardian first, Guardian second)
+        {
+            return string.Equals(first.Email, second.Email, StringComparison.Ordinal)
+                && string.Equals(first.FirstName, second.FirstName, StringComparison.Ordinal)
+                && string.Equals(first.LastName, second.LastName, StringComparison.Ordinal)
+                && string.Equals(first.Phone, second.Phone, StringComparison.Ordinal);
+        }
+
+        private static (List<Guardian> Guardians, List<GuardianRelationship> Guardianrelationships) GetGuardiansAndRelationships(
+            ResolvedExportPopulation population)
         {
             List<Guardian> guardians = [];
             List<GuardianRelationship> guardianrelationships = [];
@@ -67,7 +179,8 @@ namespace Somtoday2MicrosoftSDS.Helpers
             return (guardians, guardianrelationships);
         }
 
-        private (List<Section> Sections, List<Teacher> Teachers, List<Student> Students, List<TeacherRoster> TeacherRoster, List<StudentEnrollment> StudentEnrollments) GetClassesAndEnrollments()
+        private (List<Section> Sections, List<Teacher> Teachers, List<Student> Students, List<TeacherRoster> TeacherRoster, List<StudentEnrollment> StudentEnrollments) GetClassesAndEnrollments(
+            ResolvedExportPopulation population)
         {
             string currentSchoolyear = AmsterdamTimeHelper.GetSchoolYear(runDate);
             List<Section> sections = [];
@@ -144,16 +257,13 @@ namespace Somtoday2MicrosoftSDS.Helpers
             return (sections, teachers, students, teacherRoster, studentEnrollments);
         }
 
-        private List<School> GetSchools()
+        private static School GetSchool(ResolvedExportPopulation population)
         {
-            return
-            [
-                new School
-                {
-                    SISid = population.Vestiging.Uuid.ToString(),
-                    Name = population.Vestiging.Naam
-                }
-            ];
+            return new School
+            {
+                SISid = population.Vestiging.Uuid.ToString(),
+                Name = population.Vestiging.Naam
+            };
         }
     }
 }

@@ -4,7 +4,7 @@ This document defines confirmed intended SDS transformation behavior. External S
 
 ## Dataset formats and availability
 
-- For every published normal-mode scope, the application generates both an SDS V1 dataset and an SDS V2.1 dataset.
+- For every eligible normal-mode output scope, the application always attempts one SDS V1 dataset and one SDS V2.1 dataset from the same included population. Neither version can be disabled or excluded by configuration or command-line selection. The datasets are separate publication units only for failure isolation, so failure of one does not suppress the attempt for the other.
 - Both versions use the same included institutions, locations, classes, teachers, pupils, and guardians.
 - Normal mode includes a location only when its resolved population contains at least one exportable class. In a grouped dataset, other included locations are still published; the publication unit is skipped only when no location remains. A skip logs a warning, is not a run failure, and leaves existing output unchanged.
 - Header-only mode emits all required files with headers and no data rows. It is enabled by `Output:GenerateEmptyCsv`, `--empty-csv`, or automatically on July 31 in `Europe/Amsterdam` time.
@@ -18,6 +18,20 @@ Only teachers and pupils belonging to an included class are exported. A person e
 Username generation happens after population resolution. An empty generated username does not change class eligibility.
 
 School-year calculations use an August boundary and `Europe/Amsterdam` time.
+
+## Grouped dataset identities
+
+The existing class-identifier calculations remain unchanged. Both versions emit the filtered class name and append the Amsterdam school year. V1 decides whether to prepend the lower-cased `Vestiging.Afkorting` by comparing the unfiltered `Lesgroep.Naam` with the location abbreviation; V2.1 performs that comparison against the filtered class name. Compare the completed identifiers case-insensitively within each SDS-version dataset. If two different `Lesgroep` UUIDs produce the same identifier, fail the affected SDS-version publication unit instead of changing either identifier or publishing duplicate classes.
+
+When one Somtoday person UUID occurs in multiple included locations:
+
+- V1 emits one teacher or pupil row per location, retaining the same person `SIS ID` and that location's `School SIS ID`.
+- V2.1 emits one user row per Somtoday UUID and retains the distinct organization roles.
+- V1 guardian rows and V2.1 guardian users are deduplicated by Somtoday UUID.
+
+This behavior assumes that a recurring person UUID represents the same Somtoday source object in every location; only the V1 school association varies per location.
+
+Emit each exact relationship, role, roster, and enrollment combination once. Different Somtoday UUIDs that produce the same username or email remain separate source people and are passed through for Microsoft SDS to validate.
 
 ## Username rules
 
@@ -46,6 +60,7 @@ Somtoday does not indicate whether an adult pupil consented to guardian access. 
 
 ## External SDS constraints
 
+- Microsoft documents V1 teacher and pupil `SIS ID` as a unique ID. The confirmed per-location V1 behavior above can deliberately repeat that value when one person belongs to multiple locations and may therefore be rejected by SDS.
 - [SDS V1 CSV format](https://learn.microsoft.com/en-us/schooldatasync/sds-v1-csv-file-format) requires `user.csv` to hold separate guardian `Email`, `First Name`, and `Last Name` values; `Phone` and `SIS ID` are optional, and phone is E.164 formatted.
 - [SDS V2.1 CSV format](https://learn.microsoft.com/en-us/schooldatasync/sds-v2.1-csv-file-format) represents a guardian in `users.csv` with `sourcedId`, `username`, `givenName`, `familyName`, `email`, and optional `phone`.
 - [Microsoft guardian guidance](https://learn.microsoft.com/en-us/schooldatasync/parents-and-guardians-in-sds) requires names and email for a user referenced by a contact relationship.
