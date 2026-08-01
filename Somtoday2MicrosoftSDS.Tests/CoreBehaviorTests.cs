@@ -155,6 +155,29 @@ public class CoreBehaviorTests
         Assert.Equal(BlobAuthenticationMode.DefaultAzureCredential, BlobClientFactory.GetAuthenticationMode(result));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConfigurationRejectsHttpBlobServiceUri(bool isDevelopment)
+    {
+        IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
+        {
+            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
+            ["Storage:AzureBlob:ServiceUri"] = "http://account.blob.core.windows.net",
+            ["Storage:AzureBlob:ConnectionString"] = ""
+        });
+
+        Assert.False(SyncConfiguration.TryCreate(
+            configuration,
+            "client-secret",
+            isDevelopment,
+            out _,
+            out string[] errors));
+        Assert.Contains(
+            errors,
+            error => error.Contains("absolute HTTPS URI", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void NightlyIsAcceptedOnlyInDevelopment()
     {
@@ -327,6 +350,18 @@ public class CoreBehaviorTests
 
         Assert.Single(selected);
         Assert.Equal("B", selected[0].Afkorting);
+    }
+
+    [Fact]
+    public void LocationSelectionRetainsBlankCodesOnlyWhenInclusionListIsEmpty()
+    {
+        List<Vestiging> locations = [Location(null), Location(" "), Location("A")];
+
+        List<Vestiging> selectedWithoutWhitelist = LocationSelector.Select(locations, [], []);
+        List<Vestiging> selectedWithWhitelist = LocationSelector.Select(locations, ["A"], []);
+
+        Assert.Equal(locations, selectedWithoutWhitelist);
+        Assert.Equal("A", Assert.Single(selectedWithWhitelist).Afkorting);
     }
 
     [Theory]

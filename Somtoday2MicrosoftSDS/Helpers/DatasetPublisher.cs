@@ -298,7 +298,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
             {
                 try
                 {
-                    await _store.RestoreVersionAsync(
+                    await _store.RestoreAsync(
                         restoreSet.Files[fileName],
                         BlobPathHelper.Combine(livePrefix, fileName),
                         cancellationToken);
@@ -353,11 +353,11 @@ namespace Somtoday2MicrosoftSDS.Helpers
             string livePrefix,
             CancellationToken cancellationToken)
         {
-            Dictionary<(DateTimeOffset RunUtc, bool GuardianEnabled), List<BlobVersionItem>> groups = [];
+            Dictionary<(DateTimeOffset RunUtc, bool GuardianEnabled), List<BlobRestoreSource>> groups = [];
             string prefix = livePrefix.TrimEnd('/') + "/";
             HashSet<string> knownNames = [.. dataset.CoreFileNames, .. dataset.GuardianFileNames];
 
-            await foreach (BlobVersionItem item in _store.GetVersionsAsync(prefix, cancellationToken))
+            await foreach (BlobRestoreSource item in _store.GetRestoreSourcesAsync(prefix, cancellationToken))
             {
                 string fileName = item.Name[prefix.Length..];
                 if (fileName.Contains('/') || !knownNames.Contains(fileName))
@@ -376,7 +376,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 }
 
                 (DateTimeOffset RunUtc, bool GuardianEnabled) key = (runUtc, guardianEnabled);
-                if (!groups.TryGetValue(key, out List<BlobVersionItem> items))
+                if (!groups.TryGetValue(key, out List<BlobRestoreSource> items))
                 {
                     items = [];
                     groups.Add(key, items);
@@ -385,11 +385,11 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 items.Add(item);
             }
 
-            foreach (((DateTimeOffset runUtc, bool guardianEnabled), List<BlobVersionItem> items) in
+            foreach (((DateTimeOffset runUtc, bool guardianEnabled), List<BlobRestoreSource> items) in
                 groups.OrderByDescending(group => group.Key.RunUtc))
             {
                 IReadOnlyList<string> expectedNames = dataset.GetExpectedFileNames(guardianEnabled);
-                Dictionary<string, BlobVersionItem> selected = items
+                Dictionary<string, BlobRestoreSource> selected = items
                     .GroupBy(item => item.Name[prefix.Length..], StringComparer.OrdinalIgnoreCase)
                     .ToDictionary(
                         group => group.Key,
@@ -408,7 +408,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
             return null;
         }
 
-        private static DateTimeOffset GetVersionTimestamp(BlobVersionItem item)
+        private static DateTimeOffset GetVersionTimestamp(BlobRestoreSource item)
         {
             return DateTimeOffset.TryParse(
                 item.VersionId,
@@ -474,6 +474,6 @@ namespace Somtoday2MicrosoftSDS.Helpers
         private sealed record RestoreSet(
             DateTimeOffset RunUtc,
             bool GuardianEnabled,
-            IReadOnlyDictionary<string, BlobVersionItem> Files);
+            IReadOnlyDictionary<string, BlobRestoreSource> Files);
     }
 }

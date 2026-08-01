@@ -159,6 +159,70 @@ public sealed class DatasetPublisherTests
     }
 
     [Fact]
+    public async Task RollbackAcceptsCompleteOlderSetFromVersionlessBaseBlobs()
+    {
+        VersionAwareBlobStore store = new()
+        {
+            ShouldFailCopy = (_, destination) => destination.EndsWith("orgs.csv", StringComparison.Ordinal)
+        };
+        PublicationDataset dataset = CreateV2Dataset(guardians: false);
+        DateTimeOffset restoreRun = RunUtc.AddHours(-1);
+        foreach (string fileName in dataset.CoreFileNames)
+        {
+            store.AddCurrent(
+                "output/v2/" + fileName,
+                "old-" + fileName,
+                Metadata(restoreRun, "v2", guardians: false));
+        }
+
+        DatasetPublicationResult result = await CreatePublisher(store).PublishAsync(
+            dataset,
+            "output/v2",
+            CancellationToken.None);
+
+        Assert.Equal(DatasetPublicationResult.Failed, result);
+        Assert.Equal(dataset.CoreFileNames.Count, store.RestoreAttempts.Count);
+        Assert.All(
+            dataset.CoreFileNames,
+            fileName => Assert.Equal(
+                "old-" + fileName,
+                store.Current["output/v2/" + fileName].Content.ToString()));
+        Assert.Empty(store.RestoredVersionIds);
+    }
+
+    [Fact]
+    public async Task RollbackCombinesVersionedAndVersionlessSourcesAfterPartialPromotion()
+    {
+        VersionAwareBlobStore store = new()
+        {
+            ShouldFailCopy = (_, destination) => destination.EndsWith("users.csv", StringComparison.Ordinal)
+        };
+        PublicationDataset dataset = CreateV2Dataset(guardians: false);
+        DateTimeOffset restoreRun = RunUtc.AddHours(-1);
+        foreach (string fileName in dataset.CoreFileNames)
+        {
+            store.AddCurrent(
+                "output/v2/" + fileName,
+                "old-" + fileName,
+                Metadata(restoreRun, "v2", guardians: false));
+        }
+
+        DatasetPublicationResult result = await CreatePublisher(store).PublishAsync(
+            dataset,
+            "output/v2",
+            CancellationToken.None);
+
+        Assert.Equal(DatasetPublicationResult.Failed, result);
+        Assert.Equal(dataset.CoreFileNames.Count, store.RestoreAttempts.Count);
+        Assert.Single(store.RestoredVersionIds);
+        Assert.All(
+            dataset.CoreFileNames,
+            fileName => Assert.Equal(
+                "old-" + fileName,
+                store.Current["output/v2/" + fileName].Content.ToString()));
+    }
+
+    [Fact]
     public async Task V1GuardianRollbackRequiresBothGuardianFiles()
     {
         VersionAwareBlobStore store = new()
@@ -244,6 +308,25 @@ public sealed class DatasetPublisherTests
         Assert.Contains(v2.Files, file => file.Name == "relationships.csv" && file.Content.ToMemory().Length > 0);
         Assert.DoesNotContain(fileHelper.CreateEmptyV1Dataset(false).Files, file => file.Name == "User.csv");
         Assert.DoesNotContain(fileHelper.CreateEmptyV2Dataset(false).Files, file => file.Name == "relationships.csv");
+    }
+
+    [Fact]
+    public void V1DatasetUsesStableAcceptedFileNameCasing()
+    {
+        PublicationDataset dataset = new FileHelper().CreateEmptyV1Dataset(includeGuardianSync: true);
+
+        Assert.Equal(
+            [
+                "School.csv",
+                "Section.csv",
+                "Teacher.csv",
+                "Student.csv",
+                "TeacherRoster.csv",
+                "StudentEnrollment.csv",
+                "User.csv",
+                "Guardianrelationship.csv"
+            ],
+            dataset.Files.Select(file => file.Name));
     }
 
     [Fact]
@@ -485,7 +568,7 @@ public sealed class DatasetPublisherTests
 
     private sealed class VersionAwareBlobStore : IBlobPublicationStore
     {
-        private readonly List<(BlobVersionItem Item, BinaryData Content)> _versions = [];
+        private readonly List<(BlobRestoreSource Item, BinaryData Content)> _versions = [];
         private long _sequence;
 
         internal sealed record StoredBlob(
@@ -558,8 +641,8 @@ public sealed class DatasetPublisherTests
             return Task.CompletedTask;
         }
 
-        public Task RestoreVersionAsync(
-            BlobVersionItem sourceVersion,
+        public Task RestoreAsync(
+            BlobRestoreSource source,
             string destinationBlobName,
             CancellationToken cancellationToken)
         {
@@ -570,9 +653,21 @@ public sealed class DatasetPublisherTests
                 throw new InvalidOperationException("restore failed");
             }
 
-            BinaryData content = _versions.Single(version => version.Item.VersionId == sourceVersion.VersionId).Content;
-            WriteCurrent(destinationBlobName, content, sourceVersion.Metadata);
-            RestoredVersionIds.Add(sourceVersion.VersionId);
+            if (string.IsNullOrWhiteSpace(source.VersionId))
+            {
+                if (!string.Equals(source.Name, destinationBlobName, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("invalid versionless restore source");
+                }
+
+                return Task.CompletedTask;
+            }
+
+            BinaryData content = _versions.Single(version =>
+                version.Item.Name == source.Name &&
+                version.Item.VersionId == source.VersionId).Content;
+            WriteCurrent(destinationBlobName, content, source.Metadata);
+            RestoredVersionIds.Add(source.VersionId);
             return Task.CompletedTask;
         }
 
@@ -588,15 +683,20 @@ public sealed class DatasetPublisherTests
 
             if (Current.Remove(blobName, out StoredBlob existing))
             {
+                _sequence++;
                 _versions.Add((
-                    new BlobVersionItem(blobName, existing.VersionId, existing.LastModified, existing.Metadata),
+                    new BlobRestoreSource(
+                        blobName,
+                        existing.VersionId ?? "version-" + _sequence,
+                        existing.LastModified,
+                        existing.Metadata),
                     existing.Content));
             }
 
             return Task.CompletedTask;
         }
 
-        public async IAsyncEnumerable<BlobVersionItem> GetVersionsAsync(
+        public async IAsyncEnumerable<BlobRestoreSource> GetRestoreSourcesAsync(
             string prefix,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
@@ -606,7 +706,7 @@ public sealed class DatasetPublisherTests
                 throw GetVersionsException;
             }
 
-            foreach ((BlobVersionItem item, _) in _versions.Where(version =>
+            foreach ((BlobRestoreSource item, _) in _versions.Where(version =>
                 version.Item.Name.StartsWith(prefix, StringComparison.Ordinal)))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -617,7 +717,7 @@ public sealed class DatasetPublisherTests
                 entry.Key.StartsWith(prefix, StringComparison.Ordinal)))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                yield return new BlobVersionItem(
+                yield return new BlobRestoreSource(
                     name,
                     current.VersionId,
                     current.LastModified,
@@ -665,7 +765,7 @@ public sealed class DatasetPublisherTests
             string content)
         {
             _versions.Add((
-                new BlobVersionItem(name, versionId, lastModified, metadata),
+                new BlobRestoreSource(name, versionId, lastModified, metadata),
                 BinaryData.FromString(content)));
         }
 
@@ -676,8 +776,13 @@ public sealed class DatasetPublisherTests
         {
             if (Current.Remove(name, out StoredBlob existing))
             {
+                _sequence++;
                 _versions.Add((
-                    new BlobVersionItem(name, existing.VersionId, existing.LastModified, existing.Metadata),
+                    new BlobRestoreSource(
+                        name,
+                        existing.VersionId ?? "version-" + _sequence,
+                        existing.LastModified,
+                        existing.Metadata),
                     existing.Content));
             }
 
@@ -685,7 +790,7 @@ public sealed class DatasetPublisherTests
             Current[name] = new StoredBlob(
                 content,
                 new Dictionary<string, string>(metadata, StringComparer.OrdinalIgnoreCase),
-                "version-" + _sequence,
+                null,
                 RunUtc.AddTicks(_sequence));
         }
     }

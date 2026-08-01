@@ -15,7 +15,7 @@ This operator-facing guide describes configuration and current expression syntax
 | `Somtoday__ClientId` | Required | Required |
 | `Somtoday__SchoolUUID__0` and higher | At least one unique UUID | Same |
 | `Somtoday__Environment` | Full `PROD`, `TEST`, or `ACCEPTATIE` preferred | Same, plus `NIGHTLY` for local Development only |
-| `Storage__AzureBlob__ServiceUri` | Required | Wins when supplied |
+| `Storage__AzureBlob__ServiceUri` | Required absolute HTTPS URI | Optional absolute HTTPS URI; wins when supplied |
 | `Storage__AzureBlob__ConnectionString` | Prohibited | Allowed only when service URI is empty |
 | `Storage__AzureBlob__Container` | Required; default `sds` | Same |
 | `Output__Folder` | Default `sds/output` | Same |
@@ -57,7 +57,9 @@ Invoke-WebRequest -Uri 'https://api.somtoday.nl/rest/v1/connect/instelling'
 
 The application retrieves that list once per run without authentication, even when synchronization uses another Somtoday environment. A configured UUID must occur exactly once and have a usable abbreviation. Failure to retrieve the list aborts the run before dataset publication; an invalid individual match fails that institution while other matched institutions remain eligible.
 
-Location codes are matched case-insensitively. With no inclusion list, every available location is selected. Exclusions always take precedence.
+Location codes are matched case-insensitively. With no inclusion list, every available location is selected. A selected location with a blank abbreviation is not silently discarded: output-layout validation fails that institution while other institutions remain eligible. With a non-empty inclusion list, a blank abbreviation cannot match and is not selected. Exclusions always take precedence for usable codes.
+
+`Storage__AzureBlob__ServiceUri` must use HTTPS in every environment because it is authenticated with `DefaultAzureCredential`. For local Azurite over HTTP, leave the service URI empty and use the Development-only connection string.
 
 ## Username expressions
 

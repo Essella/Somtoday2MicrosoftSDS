@@ -91,9 +91,9 @@ namespace Somtoday2MicrosoftSDS.Helpers
             }
             else if (!string.IsNullOrWhiteSpace(blobServiceUri)
                 && (!Uri.TryCreate(blobServiceUri, UriKind.Absolute, out Uri serviceUri)
-                    || (serviceUri.Scheme != Uri.UriSchemeHttps && serviceUri.Scheme != Uri.UriSchemeHttp)))
+                    || serviceUri.Scheme != Uri.UriSchemeHttps))
             {
-                validationErrors.Add("Storage:AzureBlob:ServiceUri must be an absolute HTTP(S) URI");
+                validationErrors.Add("Storage:AzureBlob:ServiceUri must be an absolute HTTPS URI");
             }
 
             if (string.IsNullOrWhiteSpace(blobContainer))

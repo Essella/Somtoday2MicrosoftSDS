@@ -30,6 +30,8 @@ Slash and backslash characters in abbreviations become `_`. Paths are compared c
 
 An institution folder is named from the matching public `Instelling.Afkorting`; a location folder is named from `Vestiging.Afkorting`.
 
+Every selected location must have a non-empty abbreviation after trimming. With an empty inclusion list, a location with a blank abbreviation remains selected and output-layout validation fails only its institution; it is not silently omitted. With a non-empty inclusion list, a blank abbreviation cannot match and remains unselected.
+
 When institution separation is disabled and equal sanitized location abbreviations occur in different institutions, only the colliding folders are named `{InstitutionAfkorting}_{LocationAfkorting}`. Other unresolved output-path conflicts fail the affected institution.
 
 Plan location folder names from all selected locations before normal-mode population eligibility is evaluated. A location therefore keeps its planned folder name when another selected location is later omitted or its institution fails during data download.
@@ -73,18 +75,20 @@ Delete the dataset's staging files after successful promotion or completed error
 
 At startup, apply the same four-attempt best-effort policy to all recognized application-owned staging Blobs left by an aborted run. Exhausted startup cleanup logs a warning and the new run continues because the new run uses its own `RunId`. Staging that remains may be ignored and retried at a later startup. Application cancellation stops cleanup immediately and is never converted into a cleanup warning. Runs must not overlap: startup cleanup is allowed to remove another run's staging data, so overlapping runs are unsupported.
 
-## Complete-set rollback from Blob versions
+## Complete-set rollback from base Blobs and Blob versions
 
 [Blob versioning](https://learn.microsoft.com/en-us/azure/storage/blobs/versioning-overview) must be enabled for the output storage account. Promotion does not inspect existing live files, metadata, or version IDs. Manually initialized or corrected live files are therefore overwritten normally.
 
-Only after all four promotion attempts fail, list base Blobs and versions for the dataset's known live file names. A version is an eligible rollback source only when all four application metadata values are present and valid. Exclude the current failed run, group older versions by run timestamp, SDS version, and guardian setting, and select the newest older group that is complete. If retries created multiple versions of one file for the same run timestamp, select the version with the newest Blob last-modified timestamp.
+Only after all four promotion attempts fail, list base Blobs and versions for the dataset's known live file names. A listed item is an eligible rollback source only when all four application metadata values are present and valid. Exclude the current failed run, group older sources by run timestamp, SDS version, and guardian setting, and select the newest older group that is complete. If retries created multiple sources for one file and run timestamp, select the source with the newest Blob last-modified timestamp and then the newest parseable version timestamp.
 
 A complete group contains:
 
 - V1: `School.csv`, `Section.csv`, `Teacher.csv`, `Student.csv`, `TeacherRoster.csv`, and `StudentEnrollment.csv`, plus `User.csv` and `Guardianrelationship.csv` when that group has guardian sync enabled.
 - V2.1: `orgs.csv`, `users.csv`, `roles.csv`, `classes.csv`, and `enrollments.csv`, plus `relationships.csv` when that group has guardian sync enabled.
 
-Restore every file in the chosen group to its live name. When the chosen group has guardian sync disabled, remove the known guardian-specific live files. Unknown files and versions without valid application metadata are never rollback sources and are not automatically removed.
+The exact V1 file-name casing shown above is a stable part of this contract and has been confirmed accepted by SDS.
+
+Both base Blobs and versioned Blobs can be rollback sources when their metadata is valid. A selected versioned source is copied to its live name. A selected versionless base Blob is already the live file and restoration is a no-op only when its name exactly equals that destination; it cannot be copied as a historical source. When the chosen group has guardian sync disabled, remove the known guardian-specific live files. Unknown files and sources without valid application metadata are never rollback sources and are not automatically removed.
 
 If no complete older application set exists, restore nothing, fail fatally, and do not process later datasets. If an individual restore or guardian-removal action fails, attempt the remaining rollback actions and then fail fatally. After a complete successful rollback, only the affected dataset and its participating institutions are failed; processing continues with later SDS versions and scopes.
 

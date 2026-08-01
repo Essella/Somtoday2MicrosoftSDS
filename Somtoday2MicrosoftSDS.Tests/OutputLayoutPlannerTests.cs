@@ -120,6 +120,31 @@ public sealed class OutputLayoutPlannerTests
         Assert.Equal(expectedScopeCount, plan.Scopes.Count);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void BlankSelectedLocationFailsOnlyItsInstitution(
+        bool separateByInstitution,
+        bool separateByLocation)
+    {
+        OutputLayoutPlan plan = OutputLayoutPlanner.Create(
+            [
+                School(FirstSchoolUuid, "INVALID", " "),
+                School(SecondSchoolUuid, "VALID", "LOC")
+            ],
+            "sds/output",
+            separateByInstitution,
+            separateByLocation);
+
+        OutputPublicationScope survivingScope = Assert.Single(plan.Scopes);
+        Assert.Equal(SecondSchoolUuid, Assert.Single(survivingScope.SchoolUuids));
+        Assert.Equal("LOC", Assert.Single(survivingScope.Locations).Location.Afkorting);
+        Assert.Equal(FirstSchoolUuid, Assert.Single(plan.FailedSchoolUuids));
+        Assert.Single(plan.Issues);
+    }
+
     [Fact]
     public void CombinedScopeCanPublishOnlyTheSuccessfulInstitutionSubset()
     {

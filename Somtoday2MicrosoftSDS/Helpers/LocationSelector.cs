@@ -11,10 +11,24 @@ namespace Somtoday2MicrosoftSDS.Helpers
             HashSet<string> excluded = NormalizeCodes(excludedLocationCodes);
 
             return locations
-                .Where(location => !string.IsNullOrWhiteSpace(location.Afkorting))
-                .Where(location => included.Count == 0 || included.Contains(location.Afkorting.Trim()))
-                .Where(location => !excluded.Contains(location.Afkorting.Trim()))
+                .Where(location => IsSelected(location.Afkorting, included, excluded))
                 .ToList();
+        }
+
+        private static bool IsSelected(
+            string locationCode,
+            IReadOnlySet<string> included,
+            IReadOnlySet<string> excluded)
+        {
+            string normalizedCode = locationCode?.Trim();
+            if (included.Count > 0)
+            {
+                return !string.IsNullOrEmpty(normalizedCode) &&
+                    included.Contains(normalizedCode) &&
+                    !excluded.Contains(normalizedCode);
+            }
+
+            return string.IsNullOrEmpty(normalizedCode) || !excluded.Contains(normalizedCode);
         }
 
         private static HashSet<string> NormalizeCodes(IEnumerable<string> codes)

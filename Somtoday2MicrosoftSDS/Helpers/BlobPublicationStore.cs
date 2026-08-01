@@ -11,7 +11,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
         BlobContainerClient ContainerClient,
         TokenCredential TokenCredential);
 
-    internal sealed record BlobVersionItem(
+    internal sealed record BlobRestoreSource(
         string Name,
         string VersionId,
         DateTimeOffset LastModified,
@@ -33,14 +33,14 @@ namespace Somtoday2MicrosoftSDS.Helpers
             IReadOnlyDictionary<string, string> metadata,
             CancellationToken cancellationToken);
 
-        Task RestoreVersionAsync(
-            BlobVersionItem sourceVersion,
+        Task RestoreAsync(
+            BlobRestoreSource source,
             string destinationBlobName,
             CancellationToken cancellationToken);
 
         Task DeleteIfExistsAsync(string blobName, CancellationToken cancellationToken);
 
-        IAsyncEnumerable<BlobVersionItem> GetVersionsAsync(
+        IAsyncEnumerable<BlobRestoreSource> GetRestoreSourcesAsync(
             string prefix,
             CancellationToken cancellationToken);
 
@@ -92,18 +92,29 @@ namespace Somtoday2MicrosoftSDS.Helpers
             await CopyFromSourceAsync(source, destinationBlobName, metadata, cancellationToken);
         }
 
-        public async Task RestoreVersionAsync(
-            BlobVersionItem sourceVersion,
+        public async Task RestoreAsync(
+            BlobRestoreSource source,
             string destinationBlobName,
             CancellationToken cancellationToken)
         {
-            BlobClient source = _containerClient
-                .GetBlobClient(sourceVersion.Name)
-                .WithVersion(sourceVersion.VersionId);
+            if (string.IsNullOrWhiteSpace(source.VersionId))
+            {
+                if (string.Equals(source.Name, destinationBlobName, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                throw new InvalidOperationException(
+                    "A versionless Blob restore source must already be the destination Blob");
+            }
+
+            BlobClient sourceBlob = _containerClient
+                .GetBlobClient(source.Name)
+                .WithVersion(source.VersionId);
             await CopyFromSourceAsync(
-                source,
+                sourceBlob,
                 destinationBlobName,
-                sourceVersion.Metadata,
+                source.Metadata,
                 cancellationToken);
         }
 
@@ -113,7 +124,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 cancellationToken: cancellationToken);
         }
 
-        public async IAsyncEnumerable<BlobVersionItem> GetVersionsAsync(
+        public async IAsyncEnumerable<BlobRestoreSource> GetRestoreSourcesAsync(
             string prefix,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
@@ -123,12 +134,12 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 prefix,
                 cancellationToken))
             {
-                if (string.IsNullOrWhiteSpace(item.VersionId) || item.Properties.LastModified is null)
+                if (item.Properties.LastModified is null)
                 {
                     continue;
                 }
 
-                yield return new BlobVersionItem(
+                yield return new BlobRestoreSource(
                     item.Name,
                     item.VersionId,
                     item.Properties.LastModified.Value,

@@ -14,7 +14,7 @@ Owns the run lifecycle, composition root, institution isolation, output-scope an
 
 ### `SyncConfiguration` and `SettingsHelper`: validated settings
 
-`SyncConfiguration` builds immutable run settings and validates required Somtoday and Blob configuration. The plaintext Somtoday NIGHTLY environment is accepted only in Development. `SettingsHelper` stores and evaluates process-global username rules. `SettingsHelper.Initialize` changes process-wide static formatter state.
+`SyncConfiguration` builds immutable run settings and validates required Somtoday and Blob configuration, including HTTPS for every configured Blob service URI. The plaintext Somtoday NIGHTLY environment is accepted only in Development. `SettingsHelper` stores and evaluates process-global username rules. `SettingsHelper.Initialize` changes process-wide static formatter state.
 
 - **Inputs:** Layered .NET configuration and the already-resolved client secret.
 - **Outputs:** An immutable `SyncConfiguration`, validation errors, and compiled username accessors.
@@ -56,10 +56,10 @@ Serializes every file of one V1 or V2.1 publication unit to memory before Blob I
 
 ### `DatasetPublisher`, Blob store, `BlobClientFactory`, and `BlobPathHelper`: Blob publication
 
-Select Blob authentication, normalize prefixes, create the container, stage a complete dataset, perform server-side complete-set promotion retries, find complete application-authored Blob-version groups, restore after exhausted promotion, clean staging, and manage guardian-file lifecycle. Detailed behavior is in the [publication contract](contracts/PUBLICATION.md).
+Select Blob authentication, normalize prefixes, create the container, stage a complete dataset, perform server-side complete-set promotion retries, find complete application-authored groups among base Blobs and Blob versions, restore after exhausted promotion, clean staging, and manage guardian-file lifecycle. Detailed behavior is in the [publication contract](contracts/PUBLICATION.md).
 
 - **Inputs:** Validated storage settings, one `PublicationDataset`, its live prefix, the captured run timestamp, the run's UUIDv7 identifier, and cancellation.
-- **Side effects:** Container creation, staging uploads, live server-side copies, version-based rollback, staging cleanup, and known guardian-file removal.
+- **Side effects:** Container creation, staging uploads, live server-side copies, base/version rollback, staging cleanup, and known guardian-file removal.
 - **Boundary:** Does not serialize CSV, select institutions or locations, decide export population, or decide whether a recoverable dataset failure stops later datasets.
 
 ### Infrastructure and delivery
@@ -75,19 +75,19 @@ Infrastructure does not provision Somtoday access, a Microsoft SDS ingestion con
 3. `SyncConfiguration` validates run settings; `SettingsHelper` initializes username expressions separately.
 4. `BlobClientFactory` creates the authenticated Blob context. The Blob store creates the container if needed, and `DatasetPublisher` recognizes exact application-owned UUIDv7 staging paths and makes up to four complete best-effort cleanup attempts. Exhausted cleanup warns and startup continues.
 5. The process retrieves the public production institution list once without authentication and matches each configured institution UUID.
-6. For each matched institution, the process authenticates against the configured environment with at most four transient-only attempts and a cancellable two-second retry wait, selects locations, and creates the complete output-layout plan before population eligibility is evaluated.
+6. For each matched institution, the process authenticates against the configured environment with at most four transient-only attempts and a cancellable two-second retry wait, selects locations, and creates the complete output-layout plan before population eligibility is evaluated. An empty inclusion list retains a blank-abbreviation location so layout validation records that institution as failed instead of silently omitting the location.
 7. Locations within an institution and institutions themselves are downloaded sequentially. Group, employee, pupil, and optional guardian requests run concurrently within one location.
 8. `ExportPopulationResolver` resolves one shared population per location. Normal mode warns and omits locations without an included class; source-level institution failures are excluded from combined scopes while successfully resolved institutions remain publishable.
 9. For every planned output scope, the V1 and V2 helpers are both invoked with the same remaining ordered location populations, captured Amsterdam date, and guardian export policy. Neither version has an exclusion path. A conversion failure blocks that versioned publication unit but does not suppress the mandatory attempt for the other version or later output scopes.
-10. `Program` creates one compact UUIDv7 run identifier. `FileHelper` serializes the complete UTF-8 CSV set without a byte-order mark, and `DatasetPublisher` stages it once below `.staging/{RunId}/`, promotes it with at most four complete-set attempts, and uses application metadata plus Blob versions for complete-set rollback after exhausted promotion. Dataset staging cleanup also gets four complete best-effort attempts and never changes a successful publication after exhaustion.
+10. `Program` creates one compact UUIDv7 run identifier. `FileHelper` serializes the complete UTF-8 CSV set without a byte-order mark, and `DatasetPublisher` stages it once below `.staging/{RunId}/`, promotes it with at most four complete-set attempts, and uses application metadata from base Blobs and Blob versions for complete-set rollback after exhausted promotion. A selected versionless base source already at its destination is a no-op; versioned sources use server-side copy. Dataset staging cleanup also gets four complete best-effort attempts and never changes a successful publication after exhaustion.
 11. A successful rollback isolates the publication failure to that dataset; missing or failed rollback propagates a fatal exception so `Program` stops later datasets. Application cancellation bypasses rollback.
 12. The process returns `0` only when no institution was recorded as failed; configuration, cancellation, secret, storage, discovery, data-download, layout, conversion, or publication failures return `1`.
 
 ## Current constraints and observations
 
 - At least one unique valid institution UUID, a client ID, and an effective secret are required.
-- Outside Development, Key Vault and a Blob service URI are required; Blob connection strings are rejected. In Development, a service URI takes precedence over a connection string.
-- Location matching is case-insensitive. Empty inclusion means all locations; exclusion wins over inclusion.
+- Outside Development, Key Vault and an HTTPS Blob service URI are required; Blob connection strings are rejected. In Development, an HTTPS service URI takes precedence over a connection string, while local HTTP emulators use a connection string.
+- Location matching is case-insensitive. Empty inclusion means all locations, including blank-abbreviation locations that subsequently fail their institution during layout validation; a non-empty inclusion list cannot match a blank abbreviation. Exclusion wins over inclusion for usable codes.
 - Institution and location abbreviations must remain non-empty after normalization. Slash and backslash become `_`, and paths are compared case-insensitively.
 - Output paths follow both independent layout settings. Paths are compared case-insensitively; location-only cross-institution collisions receive an institution prefix, while unresolved collisions fail the affected institution.
 - `OpenAPIHelper` returns every selected location aggregate, including aggregates with empty source collections. Normal mode excludes locations without an included class from their planned scope; existing Blob output is left unchanged only when the complete scope has no eligible location.
