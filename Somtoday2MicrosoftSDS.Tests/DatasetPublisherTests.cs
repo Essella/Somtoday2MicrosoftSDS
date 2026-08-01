@@ -251,13 +251,37 @@ public sealed class DatasetPublisherTests
     {
         VersionAwareBlobStore store = new();
         store.AddCurrent(
-            "output/v2/.staging/orgs.csv",
+            $"output/v2/.staging/{RunId}/orgs.csv",
             "owned",
             Metadata(RunUtc.AddDays(-1), "v2", false));
         store.AddCurrent(
-            "output/v2/.staging/manual/orgs.csv",
-            "manual",
+            "output/v2/.staging/orgs.csv",
+            "missing run id",
+            Metadata(RunUtc.AddDays(-1), "v2", false));
+        store.AddCurrent(
+            "output/v2/.staging/0198d4e8fe8c40008000000000000001/orgs.csv",
+            "uuid v4",
+            Metadata(RunUtc.AddDays(-1), "v2", false));
+        store.AddCurrent(
+            $"output/v2/.staging/{RunId}/nested/orgs.csv",
+            "extra segment",
+            Metadata(RunUtc.AddDays(-1), "v2", false));
+        store.AddCurrent(
+            $"output/v2/.staging/{RunId}/users.csv",
+            "missing producer metadata",
             new Dictionary<string, string>());
+        store.AddCurrent(
+            "archive/.staging/output/v2/orgs.csv",
+            "live output folder",
+            Metadata(RunUtc.AddDays(-1), "v2", false));
+        store.AddCurrent(
+            "output/.staging/v2/orgs.csv",
+            "live institution",
+            Metadata(RunUtc.AddDays(-1), "v2", false));
+        store.AddCurrent(
+            "output/school/.staging/v2/orgs.csv",
+            "live location",
+            Metadata(RunUtc.AddDays(-1), "v2", false));
         store.AddCurrent(
             "output/v2/orgs.csv",
             "live",
@@ -265,30 +289,152 @@ public sealed class DatasetPublisherTests
 
         await CreatePublisher(store).CleanupStaleStagingAsync(CancellationToken.None);
 
-        Assert.DoesNotContain("output/v2/.staging/orgs.csv", store.Current.Keys);
-        Assert.Contains("output/v2/.staging/manual/orgs.csv", store.Current.Keys);
+        Assert.DoesNotContain($"output/v2/.staging/{RunId}/orgs.csv", store.Current.Keys);
+        Assert.Contains("output/v2/.staging/orgs.csv", store.Current.Keys);
+        Assert.Contains("output/v2/.staging/0198d4e8fe8c40008000000000000001/orgs.csv", store.Current.Keys);
+        Assert.Contains($"output/v2/.staging/{RunId}/nested/orgs.csv", store.Current.Keys);
+        Assert.Contains($"output/v2/.staging/{RunId}/users.csv", store.Current.Keys);
+        Assert.Contains("archive/.staging/output/v2/orgs.csv", store.Current.Keys);
+        Assert.Contains("output/.staging/v2/orgs.csv", store.Current.Keys);
+        Assert.Contains("output/school/.staging/v2/orgs.csv", store.Current.Keys);
         Assert.Contains("output/v2/orgs.csv", store.Current.Keys);
+    }
+
+    [Fact]
+    public async Task StartupCleanupRetriesCompleteCleanupUntilItSucceeds()
+    {
+        VersionAwareBlobStore store = new()
+        {
+            StaleCleanupFailuresRemaining = 2
+        };
+        store.AddCurrent(
+            $"output/v2/.staging/{RunId}/orgs.csv",
+            "owned",
+            Metadata(RunUtc.AddDays(-1), "v2", false));
+
+        await CreatePublisher(store).CleanupStaleStagingAsync(CancellationToken.None);
+
+        Assert.Equal(3, store.StaleCleanupAttempts);
+        Assert.DoesNotContain($"output/v2/.staging/{RunId}/orgs.csv", store.Current.Keys);
+    }
+
+    [Fact]
+    public async Task ExhaustedStartupCleanupWarnsAndReturnsNormally()
+    {
+        CollectingLogger logger = new();
+        VersionAwareBlobStore store = new()
+        {
+            StaleCleanupFailuresRemaining = 4
+        };
+
+        await new DatasetPublisher(store, logger, RunUtc, RunId)
+            .CleanupStaleStagingAsync(CancellationToken.None);
+
+        Assert.Equal(4, store.StaleCleanupAttempts);
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning &&
+                entry.Message.Contains("synchronization will continue", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task DatasetCleanupRetriesEveryKnownBlobAndPreservesPublicationSuccess()
+    {
+        Dictionary<string, int> attemptsByName = new(StringComparer.Ordinal);
+        VersionAwareBlobStore store = new()
+        {
+            ShouldFailDelete = (_, name) =>
+            {
+                attemptsByName.TryGetValue(name, out int attempts);
+                attemptsByName[name] = ++attempts;
+                return name.EndsWith("orgs.csv", StringComparison.Ordinal) && attempts == 1;
+            }
+        };
+        PublicationDataset dataset = CreateV2Dataset(guardians: true);
+
+        DatasetPublicationResult result = await CreatePublisher(store).PublishAsync(
+            dataset,
+            "output/v2",
+            CancellationToken.None);
+
+        Assert.Equal(DatasetPublicationResult.Succeeded, result);
+        Assert.All(
+            dataset.Files,
+            file => Assert.Equal(2, attemptsByName[$"output/v2/.staging/{RunId}/{file.Name}"]));
+        Assert.DoesNotContain(store.Current.Keys, name => name.Contains("/.staging/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ExhaustedDatasetCleanupWarnsWithoutChangingLiveOutputOrSuccess()
+    {
+        CollectingLogger logger = new();
+        VersionAwareBlobStore store = new()
+        {
+            ShouldFailDelete = (_, name) => name.EndsWith("orgs.csv", StringComparison.Ordinal)
+        };
+        PublicationDataset dataset = CreateV2Dataset(guardians: true);
+
+        DatasetPublicationResult result = await new DatasetPublisher(store, logger, RunUtc, RunId)
+            .PublishAsync(dataset, "output/v2", CancellationToken.None);
+
+        Assert.Equal(DatasetPublicationResult.Succeeded, result);
+        Assert.Contains("output/v2/orgs.csv", store.Current.Keys);
+        Assert.Contains($"output/v2/.staging/{RunId}/orgs.csv", store.Current.Keys);
+        Assert.Equal(4, store.DeleteAttempts.Count(name => name.EndsWith("orgs.csv", StringComparison.Ordinal)));
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning &&
+                entry.Message.Contains("published output is unchanged", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CleanupFailureDoesNotReplacePrimaryRollbackFailure()
+    {
+        CollectingLogger logger = new();
+        VersionAwareBlobStore store = new()
+        {
+            ShouldFailCopy = (_, destination) => destination.EndsWith("orgs.csv", StringComparison.Ordinal),
+            ShouldFailDelete = (_, name) => name.Contains("/.staging/", StringComparison.Ordinal)
+        };
+
+        PublicationRollbackException exception = await Assert.ThrowsAsync<PublicationRollbackException>(() =>
+            new DatasetPublisher(store, logger, RunUtc, RunId).PublishAsync(
+                CreateV2Dataset(false),
+                "output/v2",
+                CancellationToken.None));
+
+        Assert.Contains("No complete earlier", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning &&
+                entry.Message.Contains("staging data", StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task ApplicationCancellationDoesNotStartRollback()
     {
         using CancellationTokenSource source = new();
+        OperationCanceledException expectedException = new(source.Token);
         VersionAwareBlobStore store = new()
         {
             ShouldFailCopy = (_, _) =>
             {
                 source.Cancel();
-                throw new OperationCanceledException(source.Token);
+                throw expectedException;
             }
         };
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CreatePublisher(store).PublishAsync(
+        OperationCanceledException actualException = await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            CreatePublisher(store).PublishAsync(
             CreateV2Dataset(false),
             "output/v2",
             source.Token));
 
+        Assert.Same(expectedException, actualException);
         Assert.Empty(store.RestoreAttempts);
+        Assert.DoesNotContain(
+            store.DeleteAttempts,
+            name => name.Contains("/.staging/", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -356,13 +502,21 @@ public sealed class DatasetPublisherTests
 
         internal List<string> RestoreAttempts { get; } = [];
 
+        internal List<string> DeleteAttempts { get; } = [];
+
         internal List<string> RestoredVersionIds { get; } = [];
 
         internal HashSet<string> FailRestoreNames { get; } = new(StringComparer.Ordinal);
 
         internal int GetVersionsCalls { get; private set; }
 
+        internal int StaleCleanupAttempts { get; private set; }
+
+        internal int StaleCleanupFailuresRemaining { get; set; }
+
         internal Func<int, string, bool> ShouldFailCopy { get; init; }
+
+        internal Func<int, string, bool> ShouldFailDelete { get; init; }
 
         internal Exception CopyException { get; init; } = new InvalidOperationException("copy failed");
 
@@ -426,6 +580,12 @@ public sealed class DatasetPublisherTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Operations.Add("delete:" + blobName);
+            DeleteAttempts.Add(blobName);
+            if (ShouldFailDelete?.Invoke(DeleteAttempts.Count, blobName) == true)
+            {
+                throw new InvalidOperationException("delete failed");
+            }
+
             if (Current.Remove(blobName, out StoredBlob existing))
             {
                 _versions.Add((
@@ -469,6 +629,13 @@ public sealed class DatasetPublisherTests
 
         public Task DeleteStaleStagingAsync(CancellationToken cancellationToken)
         {
+            StaleCleanupAttempts++;
+            if (StaleCleanupFailuresRemaining > 0)
+            {
+                StaleCleanupFailuresRemaining--;
+                throw new InvalidOperationException("stale cleanup failed");
+            }
+
             foreach (string name in Current
                 .Where(entry => DatasetPublisher.IsOwnedStagingBlob(entry.Key, entry.Value.Metadata))
                 .Select(entry => entry.Key)
@@ -525,7 +692,9 @@ public sealed class DatasetPublisherTests
 
     private sealed class CollectingLogger : ILogger<DatasetPublisher>
     {
-        internal List<string> Messages { get; } = [];
+        internal List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        internal IEnumerable<string> Messages => Entries.Select(entry => entry.Message);
 
         public IDisposable BeginScope<TState>(TState state) where TState : notnull => NoopScope.Instance;
 
@@ -538,7 +707,7 @@ public sealed class DatasetPublisherTests
             Exception exception,
             Func<TState, Exception, string> formatter)
         {
-            Messages.Add(formatter(state, exception));
+            Entries.Add((logLevel, formatter(state, exception)));
         }
 
         private sealed class NoopScope : IDisposable

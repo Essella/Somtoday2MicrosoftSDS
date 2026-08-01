@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
@@ -5,6 +6,13 @@ using Somtoday2MicrosoftSDS.Models;
 
 namespace Somtoday2MicrosoftSDS.Helpers
 {
+    internal enum SomtodayAuthenticationResult
+    {
+        Succeeded,
+        TransientFailure,
+        PermanentFailure
+    }
+
     internal class OpenAPIHelper
     {
         private readonly string clientId;
@@ -27,11 +35,12 @@ namespace Somtoday2MicrosoftSDS.Helpers
             _logger = logger ?? LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<OpenAPIHelper>();
         }
 
-        internal async Task ConnectAsync(CancellationToken cancellationToken = default)
+        internal async Task<SomtodayAuthenticationResult> ConnectAsync(
+            CancellationToken cancellationToken = default)
         {
+            IsConnected = false;
             try
             {
-                IsConnected = false;
                 using HttpClient authenticationClient = httpClientFactory.CreateClient();
                 using FormUrlEncodedContent content = new FormUrlEncodedContent(new Dictionary<string, string>
                 {
@@ -47,13 +56,15 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 if (response.IsSuccessStatusCode)
                 {
                     string responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    string accessToken = JObject.Parse(responseContent)["access_token"]?.Value<string>();
-                    if (string.IsNullOrWhiteSpace(accessToken))
+                    JToken accessTokenValue = JObject.Parse(responseContent)["access_token"];
+                    if (accessTokenValue?.Type != JTokenType.String ||
+                        string.IsNullOrWhiteSpace(accessTokenValue.Value<string>()))
                     {
-                        _logger.LogWarning("Somtoday authentication succeeded without an access token");
-                        return;
+                        _logger.LogWarning("Somtoday authentication returned an invalid access token payload");
+                        return SomtodayAuthenticationResult.PermanentFailure;
                     }
 
+                    string accessToken = accessTokenValue.Value<string>();
                     HttpClient httpClient = httpClientFactory.CreateClient();
                     httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
@@ -63,24 +74,54 @@ namespace Somtoday2MicrosoftSDS.Helpers
                     };
                     IsConnected = true;
                     _logger.LogInformation("Successfully connected to Somtoday API");
+                    return SomtodayAuthenticationResult.Succeeded;
                 }
-                else
-                {
-                    _logger.LogWarning(
-                        "Somtoday authentication failed with HTTP status {StatusCode}",
-                        (int)response.StatusCode);
-                }
+
+                SomtodayAuthenticationResult result = IsTransientStatus(response.StatusCode)
+                    ? SomtodayAuthenticationResult.TransientFailure
+                    : SomtodayAuthenticationResult.PermanentFailure;
+                _logger.LogWarning(
+                    "Somtoday authentication failed with HTTP status {StatusCode} ({FailureKind})",
+                    (int)response.StatusCode,
+                    result == SomtodayAuthenticationResult.TransientFailure ? "transient" : "permanent");
+                return result;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
+            }
+            catch (OperationCanceledException e)
+            {
+                _logger.LogWarning(
+                    "Somtoday authentication timed out ({Error})",
+                    SafeExceptionSummary.Create(e));
+                return SomtodayAuthenticationResult.TransientFailure;
+            }
+            catch (HttpRequestException e)
+            {
+                SomtodayAuthenticationResult result = !e.StatusCode.HasValue ||
+                    IsTransientStatus(e.StatusCode.Value)
+                    ? SomtodayAuthenticationResult.TransientFailure
+                    : SomtodayAuthenticationResult.PermanentFailure;
+                _logger.LogWarning(
+                    "Somtoday authentication transport failed ({FailureKind}, {Error})",
+                    result == SomtodayAuthenticationResult.TransientFailure ? "transient" : "permanent",
+                    SafeExceptionSummary.Create(e));
+                return result;
             }
             catch (Exception e)
             {
                 _logger.LogError(
                     "Error connecting to Somtoday API ({Error})",
                     SafeExceptionSummary.Create(e));
+                return SomtodayAuthenticationResult.PermanentFailure;
             }
+        }
+
+        private static bool IsTransientStatus(HttpStatusCode statusCode)
+        {
+            int numericStatus = (int)statusCode;
+            return numericStatus is 408 or 429 or >= 500 and <= 599;
         }
 
         internal async Task<Instelling> GetInstellingAsync(CancellationToken cancellationToken = default)

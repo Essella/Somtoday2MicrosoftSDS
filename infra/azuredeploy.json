@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.46.1.21595",
-      "templateHash": "7328269751964745617"
+      "version": "0.45.15.27210",
+      "templateHash": "5149538104654264194"
     }
   },
   "parameters": {
@@ -110,11 +110,10 @@
       "allowedValues": [
         "PROD",
         "TEST",
-        "ACCEPTATIE",
-        "NIGHTLY"
+        "ACCEPTATIE"
       ],
       "metadata": {
-        "description": "Somtoday-omgeving: PROD, TEST, ACCEPTATIE of NIGHTLY."
+        "description": "Somtoday-omgeving voor productie-infrastructuur: PROD, TEST of ACCEPTATIE."
       }
     },
     "somtodayClientSecret": {

@@ -139,22 +139,50 @@ namespace Somtoday2MicrosoftSDS.Helpers
         public async Task DeleteStaleStagingAsync(CancellationToken cancellationToken)
         {
             List<string> staleBlobs = [];
-            await foreach (BlobItem item in _containerClient.GetBlobsAsync(
-                BlobTraits.Metadata,
-                BlobStates.None,
-                cancellationToken: cancellationToken))
+            List<Exception> failures = [];
+            try
             {
-                if (DatasetPublisher.IsOwnedStagingBlob(
-                    item.Name,
-                    new Dictionary<string, string>(item.Metadata, StringComparer.OrdinalIgnoreCase)))
+                await foreach (BlobItem item in _containerClient.GetBlobsAsync(
+                    BlobTraits.Metadata,
+                    BlobStates.None,
+                    cancellationToken: cancellationToken))
                 {
-                    staleBlobs.Add(item.Name);
+                    if (DatasetPublisher.IsOwnedStagingBlob(
+                        item.Name,
+                        new Dictionary<string, string>(item.Metadata, StringComparer.OrdinalIgnoreCase)))
+                    {
+                        staleBlobs.Add(item.Name);
+                    }
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures.Add(ex);
             }
 
             foreach (string blobName in staleBlobs)
             {
-                await DeleteIfExistsAsync(blobName, cancellationToken);
+                try
+                {
+                    await DeleteIfExistsAsync(blobName, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    failures.Add(ex);
+                }
+            }
+
+            if (failures.Count > 0)
+            {
+                throw new AggregateException(failures);
             }
         }
 

@@ -8,7 +8,8 @@ namespace Somtoday2MicrosoftSDS
 {
     internal class Program
     {
-        private const int MaxConnectionRetries = 20;
+        private const int TotalConnectionAttempts = 4;
+        private static readonly TimeSpan ConnectionRetryDelay = TimeSpan.FromSeconds(2);
         private static ILogger<Program> _logger;
 
         private sealed record SchoolSyncContext(
@@ -287,6 +288,7 @@ namespace Somtoday2MicrosoftSDS
                 configuration,
                 httpClientFactory,
                 apiLogger,
+                _logger,
                 cancellationToken);
             List<Vestiging> locations = await api.GetSelectedVestigingenAsync(
                 configuration.IncludedLocationCodes,
@@ -307,16 +309,19 @@ namespace Somtoday2MicrosoftSDS
                 locations);
         }
 
-        private static async Task<OpenAPIHelper> ConnectWithRetryAsync(
+        internal static async Task<OpenAPIHelper> ConnectWithRetryAsync(
             Guid schoolUuid,
             SyncConfiguration configuration,
             IHttpClientFactory httpClientFactory,
             ILogger<OpenAPIHelper> apiLogger,
-            CancellationToken cancellationToken)
+            ILogger<Program> programLogger,
+            CancellationToken cancellationToken,
+            Func<TimeSpan, CancellationToken, Task> delayAsync = null)
         {
             OpenAPIHelper api = null;
+            delayAsync ??= Task.Delay;
 
-            for (int attempt = 1; attempt <= MaxConnectionRetries + 1; attempt++)
+            for (int attempt = 1; attempt <= TotalConnectionAttempts; attempt++)
             {
                 api = new OpenAPIHelper(
                     configuration.ClientId,
@@ -325,26 +330,33 @@ namespace Somtoday2MicrosoftSDS
                     configuration.SomEnvironment,
                     httpClientFactory,
                     apiLogger);
-                await api.ConnectAsync(cancellationToken);
+                SomtodayAuthenticationResult result = await api.ConnectAsync(cancellationToken);
 
-                if (api.IsConnected)
+                if (result == SomtodayAuthenticationResult.Succeeded)
                 {
                     return api;
                 }
 
-                if (attempt <= MaxConnectionRetries)
+                if (result == SomtodayAuthenticationResult.PermanentFailure)
                 {
-                    _logger.LogWarning(
-                        "Retrying connection to Somtoday school {SchoolUuid} (attempt {Attempt}/{MaxAttempts})",
-                        schoolUuid,
-                        attempt,
-                        MaxConnectionRetries);
-                    await Task.Delay(2000, cancellationToken);
+                    break;
                 }
+
+                if (attempt == TotalConnectionAttempts)
+                {
+                    break;
+                }
+
+                programLogger.LogWarning(
+                    "Retrying connection to Somtoday school {SchoolUuid} (next attempt {NextAttempt}/{TotalAttempts})",
+                    schoolUuid,
+                    attempt + 1,
+                    TotalConnectionAttempts);
+                await delayAsync(ConnectionRetryDelay, cancellationToken);
             }
 
             throw new InvalidOperationException(
-                $"Failed to connect to Somtoday school {schoolUuid} after {MaxConnectionRetries} retries");
+                $"Failed to connect to Somtoday school {schoolUuid}");
         }
 
         private static async Task<IReadOnlyList<ResolvedLocationContext>> DownloadSchoolPopulationsAsync(

@@ -67,7 +67,11 @@ Promotion gets one initial attempt plus three complete-set retries. Every retry 
 
 A staging or conversion failure marks the affected dataset and its participating institutions as failed while leaving live output unchanged. It does not suppress the mandatory attempt for another SDS version or later scope. Application cancellation stops immediately without rollback. No success-marker Blob is used.
 
-Delete the dataset's staging files after successful promotion or completed error handling. At startup, remove active application-owned staging Blobs left by an aborted run. Runs must not overlap: startup cleanup is allowed to remove another run's staging data, so overlapping runs are unsupported.
+Staging is run-bound and is never reused by a later run. Recognize a Blob as application-owned staging only when its path ends in the exact segment structure `.staging/{RunId}/{FileName}`, `RunId` is a compact UUIDv7, `FileName` is one non-empty path segment, and the producer metadata has the exact application value. A `.staging` segment in `Output:Folder`, an institution abbreviation, or a location abbreviation does not by itself make live output staging. Old paths from another convention may therefore remain; avoiding deletion of possible live output takes precedence.
+
+Delete the dataset's staging files after successful promotion or completed error handling. Cleanup gets one initial complete attempt plus three complete retries, without an application delay and while retaining Azure SDK defaults. Every attempt tries every known staging Blob even when an individual deletion fails. Exhausted cleanup logs one safe warning only: it does not roll back live output, change a successful `DatasetPublicationResult`, fail participating institutions, suppress later SDS versions or scopes, or replace an existing publication, rollback, or cancellation failure.
+
+At startup, apply the same four-attempt best-effort policy to all recognized application-owned staging Blobs left by an aborted run. Exhausted startup cleanup logs a warning and the new run continues because the new run uses its own `RunId`. Staging that remains may be ignored and retried at a later startup. Application cancellation stops cleanup immediately and is never converted into a cleanup warning. Runs must not overlap: startup cleanup is allowed to remove another run's staging data, so overlapping runs are unsupported.
 
 ## Complete-set rollback from Blob versions
 

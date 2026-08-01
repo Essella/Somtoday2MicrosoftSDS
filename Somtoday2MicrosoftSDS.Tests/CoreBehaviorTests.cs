@@ -156,6 +156,62 @@ public class CoreBehaviorTests
     }
 
     [Fact]
+    public void NightlyIsAcceptedOnlyInDevelopment()
+    {
+        IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
+        {
+            ["Somtoday:Environment"] = "NIGHTLY",
+            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
+            ["Storage:AzureBlob:ServiceUri"] = "https://account.blob.core.windows.net",
+            ["Storage:AzureBlob:ConnectionString"] = ""
+        });
+
+        Assert.False(SyncConfiguration.TryCreate(
+            configuration,
+            "client-secret",
+            isDevelopment: false,
+            out _,
+            out string[] productionErrors));
+        Assert.Contains(
+            productionErrors,
+            error => error.Contains("NIGHTLY is allowed only in Development", StringComparison.Ordinal));
+
+        Assert.True(
+            SyncConfiguration.TryCreate(
+                configuration,
+                "client-secret",
+                isDevelopment: true,
+                out SyncConfiguration developmentResult,
+                out string[] developmentErrors),
+            string.Join(Environment.NewLine, developmentErrors));
+        Assert.Same(SomEnvironmentConfig.Nightly, developmentResult.SomEnvironment);
+    }
+
+    [Theory]
+    [InlineData("PROD")]
+    [InlineData("TEST")]
+    [InlineData("ACCEPTATIE")]
+    public void ProductionAcceptsHttpsSomtodayEnvironments(string environment)
+    {
+        IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
+        {
+            ["Somtoday:Environment"] = environment,
+            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
+            ["Storage:AzureBlob:ServiceUri"] = "https://account.blob.core.windows.net",
+            ["Storage:AzureBlob:ConnectionString"] = ""
+        });
+
+        Assert.True(
+            SyncConfiguration.TryCreate(
+                configuration,
+                "client-secret",
+                isDevelopment: false,
+                out _,
+                out string[] errors),
+            string.Join(Environment.NewLine, errors));
+    }
+
+    [Fact]
     public void ConfigurationRejectsScalarInvalidAndDuplicateUuids()
     {
         IConfiguration scalarConfiguration = CreateConfiguration(new Dictionary<string, string>

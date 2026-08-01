@@ -31,7 +31,8 @@ namespace Somtoday2MicrosoftSDS.Helpers
         internal const string ProducerMetadataValue = "Somtoday2MicrosoftSDS";
 
         private const int TotalPromotionAttempts = 4;
-        private const string StagingSegment = "/.staging/";
+        private const int TotalCleanupAttempts = 4;
+        private const string StagingDirectoryName = ".staging";
 
         private readonly IBlobPublicationStore _store;
         private readonly ILogger<DatasetPublisher> _logger;
@@ -52,20 +53,28 @@ namespace Somtoday2MicrosoftSDS.Helpers
 
         internal async Task CleanupStaleStagingAsync(CancellationToken cancellationToken)
         {
-            try
+            Exception lastFailure = null;
+            for (int attempt = 1; attempt <= TotalCleanupAttempts; attempt++)
             {
-                await _store.DeleteStaleStagingAsync(cancellationToken);
+                try
+                {
+                    await _store.DeleteStaleStagingAsync(cancellationToken);
+                    return;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    lastFailure = ex;
+                }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(
-                    "Failed to remove staging data left by an earlier run ({Error})",
-                    SafeExceptionSummary.Create(ex));
-            }
+
+            _logger.LogWarning(
+                "Failed to remove staging data left by an earlier run after {TotalAttempts} attempts; synchronization will continue ({Error})",
+                TotalCleanupAttempts,
+                SafeExceptionSummary.Create(lastFailure));
         }
 
         internal async Task<DatasetPublicationResult> PublishAsync(
@@ -78,6 +87,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
             List<string> stagedBlobNames = dataset.Files
                 .Select(file => BlobPathHelper.Combine(stagingPrefix, file.Name))
                 .ToList();
+            Exception primaryFailure = null;
 
             try
             {
@@ -159,21 +169,29 @@ namespace Somtoday2MicrosoftSDS.Helpers
 
                 throw new InvalidOperationException("The publication attempt loop ended unexpectedly");
             }
+            catch (Exception ex)
+            {
+                primaryFailure = ex;
+                throw;
+            }
             finally
             {
-                foreach (string stagedBlobName in stagedBlobNames)
+                if (primaryFailure is not OperationCanceledException ||
+                    !cancellationToken.IsCancellationRequested)
                 {
                     try
                     {
-                        await _store.DeleteIfExistsAsync(stagedBlobName, cancellationToken);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
-                    {
-                        _logger.LogWarning(
-                            "Failed to remove staging data for {SdsVersion} dataset at {BlobPrefix} ({Error})",
+                        await CleanupDatasetStagingAsync(
+                            stagedBlobNames,
                             dataset.SdsVersion,
                             livePrefix,
-                            SafeExceptionSummary.Create(ex));
+                            cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (
+                        primaryFailure is not null && cancellationToken.IsCancellationRequested)
+                    {
+                        // Preserve the primary publication or rollback failure while
+                        // stopping cleanup immediately on application cancellation.
                     }
                 }
             }
@@ -183,9 +201,69 @@ namespace Somtoday2MicrosoftSDS.Helpers
             string blobName,
             IReadOnlyDictionary<string, string> metadata)
         {
-            return blobName.Contains(StagingSegment, StringComparison.Ordinal) &&
+            string[] segments = blobName.Split('/', StringSplitOptions.None);
+            if (segments.Length < 3 ||
+                !string.Equals(segments[^3], StagingDirectoryName, StringComparison.Ordinal) ||
+                string.IsNullOrEmpty(segments[^1]) ||
+                !IsCompactUuidV7(segments[^2]))
+            {
+                return false;
+            }
+
+            return
                 TryGetMetadata(metadata, ProducerMetadataKey, out string producer) &&
                 string.Equals(producer, ProducerMetadataValue, StringComparison.Ordinal);
+        }
+
+        private async Task CleanupDatasetStagingAsync(
+            IReadOnlyList<string> stagedBlobNames,
+            string sdsVersion,
+            string livePrefix,
+            CancellationToken cancellationToken)
+        {
+            Exception lastFailure = null;
+            for (int attempt = 1; attempt <= TotalCleanupAttempts; attempt++)
+            {
+                List<Exception> failures = [];
+                foreach (string stagedBlobName in stagedBlobNames)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        await _store.DeleteIfExistsAsync(stagedBlobName, cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        failures.Add(ex);
+                    }
+                }
+
+                if (failures.Count == 0)
+                {
+                    return;
+                }
+
+                lastFailure = new AggregateException(failures);
+            }
+
+            _logger.LogWarning(
+                "Failed to remove staging data for {SdsVersion} dataset at {BlobPrefix} after {TotalAttempts} attempts; published output is unchanged ({Error})",
+                sdsVersion,
+                livePrefix,
+                TotalCleanupAttempts,
+                SafeExceptionSummary.Create(lastFailure));
+        }
+
+        private static bool IsCompactUuidV7(string value)
+        {
+            return value.Length == 32 &&
+                value[12] == '7' &&
+                value[16] is '8' or '9' or 'a' or 'b' or 'A' or 'B' &&
+                Guid.TryParseExact(value, "N", out _);
         }
 
         private async Task RollBackAsync(

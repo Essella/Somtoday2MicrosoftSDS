@@ -37,13 +37,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 genormaliseerd = string.Empty;
             }
 
-            ReadOnlySpan<char> nummerZonderPlus = genormaliseerd.AsSpan();
-            while (!nummerZonderPlus.IsEmpty && nummerZonderPlus[0] == '+')
-            {
-                nummerZonderPlus = nummerZonderPlus[1..];
-            }
-
-            if (nummerZonderPlus.Length > 15 || !ContainsOnlyDigits(nummerZonderPlus))
+            if (!E164PhoneNumberRegex().IsMatch(genormaliseerd))
             {
                 genormaliseerd = string.Empty;
             }
@@ -90,20 +84,10 @@ namespace Somtoday2MicrosoftSDS.Helpers
             return builder.ToString();
         }
 
-        private static bool ContainsOnlyDigits(ReadOnlySpan<char> value)
-        {
-            foreach (char c in value)
-            {
-                if (!char.IsDigit(c))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
         [GeneratedRegex(@"[^\S]|[\~\""\#\%\&\*\:\<\>\?\/\\{\|}\.\[\]]")]
         private static partial Regex InvalidOneDriveNameCharsRegex();
+
+        [GeneratedRegex(@"^\+[1-9][0-9]{1,14}$", RegexOptions.CultureInvariant)]
+        private static partial Regex E164PhoneNumberRegex();
     }
 }

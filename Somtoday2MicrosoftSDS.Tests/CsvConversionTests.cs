@@ -121,6 +121,46 @@ public class CsvConversionTests
         Assert.Equal("+31107654321", GuardianExportPolicy.GetPhone(guardian));
     }
 
+    [Theory]
+    [InlineData("06 12345678", "+31612345678")]
+    [InlineData("0032 12 34 56 78", "+3212345678")]
+    [InlineData("+12", "+12")]
+    [InlineData("+1", "")]
+    [InlineData("+123456789012345", "+123456789012345")]
+    [InlineData("+", "")]
+    [InlineData("++31612345678", "")]
+    [InlineData("+٣١٦١٢٣٤٥٦٧٨", "")]
+    [InlineData("+1234567890123456", "")]
+    [InlineData("letters", "")]
+    [InlineData("+012345678", "")]
+    public void PhoneNormalizationEmitsOnlyExactE164OrEmpty(string input, string expected)
+    {
+        Assert.Equal(expected, BusinessLogicHelper.NormaliseerTelefoonnummerNaarE164(input));
+    }
+
+    [Fact]
+    public void InvalidGuardianPhoneIsEmptyInBothVersionsWithoutRemovingGuardianOrRelationships()
+    {
+        OuderVerzorger guardian = CreateGuardian(
+            "guardian@example.test",
+            wantsEmail: true,
+            initials: "A.",
+            prefix: string.Empty,
+            surname: "Test");
+        guardian.Telefoonnummer = "++31612345678";
+        guardian.UitgebreidMobielNummer = "++31612345678";
+
+        ResolvedExportPopulation population = ExportPopulationResolver.Resolve(CreateModel(guardian));
+        SDScsvV1 v1 = new SDScsvHelperV1(population, RunDate).ConvertToSDSCSV();
+        SDScsvV2 v2 = new SDScsvHelperV2(population, RunDate).ConvertToSDSCSV();
+        string guardianId = guardian.Uuid.ToString();
+
+        Assert.Equal(string.Empty, Assert.Single(v1.User, user => user.SISid == guardianId).Phone);
+        Assert.Single(v1.Guardianrelationship);
+        Assert.Equal(string.Empty, Assert.Single(v2.Users, user => user.sourcedId == guardianId).phone);
+        Assert.Single(v2.Relationships);
+    }
+
     [Fact]
     public void V1AndV2UseTheSameRunDateForClassIds()
     {

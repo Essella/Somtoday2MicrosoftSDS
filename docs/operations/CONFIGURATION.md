@@ -14,7 +14,7 @@ This operator-facing guide describes configuration and current expression syntax
 | `Somtoday__ClientSecret` | Temporary Key Vault bootstrap/rotation only | Effective secret when no Vault URI is configured |
 | `Somtoday__ClientId` | Required | Required |
 | `Somtoday__SchoolUUID__0` and higher | At least one unique UUID | Same |
-| `Somtoday__Environment` | Full `PROD`, `TEST`, `ACCEPTATIE`, or `NIGHTLY` preferred | Same |
+| `Somtoday__Environment` | Full `PROD`, `TEST`, or `ACCEPTATIE` preferred | Same, plus `NIGHTLY` for local Development only |
 | `Storage__AzureBlob__ServiceUri` | Required | Wins when supplied |
 | `Storage__AzureBlob__ConnectionString` | Prohibited | Allowed only when service URI is empty |
 | `Storage__AzureBlob__Container` | Required; default `sds` | Same |
@@ -28,7 +28,9 @@ This operator-facing guide describes configuration and current expression syntax
 | `UsernameFormat__Student` | Default `Emailadres` | Same |
 | `SchoolDataSync__EnableGuardianSync` | Default `false` | Same |
 
-Full environment names are preferred for operator clarity. The parser intentionally uses only the first trimmed non-empty character, so minor spelling errors do not cause configuration failure while the four initials remain unique.
+Full environment names are preferred for operator clarity. The parser intentionally uses only the first trimmed non-empty character, so minor spelling errors do not cause configuration failure while the four initials remain unique. NIGHTLY uses a plaintext HTTP data endpoint and is rejected unless `DOTNET_ENVIRONMENT=Development`; do not use real personal data with NIGHTLY.
+
+Somtoday institution authentication gets at most four total attempts. Network and HTTP timeout failures, HTTP 408, HTTP 429, and HTTP 5xx responses are retried after a cancellable two-second wait. Other HTTP 4xx responses and invalid token payloads fail immediately. Authentication bodies, access tokens, client secrets, and raw exception messages are not logged.
 
 ## Output layout
 

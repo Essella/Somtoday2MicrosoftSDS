@@ -52,7 +52,9 @@ The runner passes the settings to the test process through temporary process-lev
 If Azure CLI with Bicep is installed:
 
 ```powershell
-az bicep build --file infra/main.bicep
+az bicep version
+az bicep build --file infra/main.bicep --outfile infra/azuredeploy.json
+az bicep build-params --file infra/main.example.bicepparam --outfile "$env:TEMP/somtoday2microsoftsds.parameters.json"
 ```
 
 `infra/main.bicep` is authoritative. Do not edit `infra/azuredeploy.json` manually.

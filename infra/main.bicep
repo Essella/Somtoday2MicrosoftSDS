@@ -57,12 +57,11 @@ param schoolUuids array
 @minLength(1)
 param somtodayClientId string
 
-@description('Somtoday-omgeving: PROD, TEST, ACCEPTATIE of NIGHTLY.')
+@description('Somtoday-omgeving voor productie-infrastructuur: PROD, TEST of ACCEPTATIE.')
 @allowed([
   'PROD'
   'TEST'
   'ACCEPTATIE'
-  'NIGHTLY'
 ])
 param somtodayEnvironment string = 'PROD'
 

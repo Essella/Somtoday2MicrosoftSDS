@@ -66,6 +66,10 @@ namespace Somtoday2MicrosoftSDS.Helpers
 
             string configuredEnvironment = configuration["Somtoday:Environment"];
             SomEnvironmentConfig somEnvironment = ParseEnvironment(configuredEnvironment, validationErrors);
+            if (!isDevelopment && ReferenceEquals(somEnvironment, SomEnvironmentConfig.Nightly))
+            {
+                validationErrors.Add("Somtoday:Environment NIGHTLY is allowed only in Development");
+            }
 
             string blobServiceUri = configuration["Storage:AzureBlob:ServiceUri"];
             string blobConnectionString = configuration["Storage:AzureBlob:ConnectionString"];

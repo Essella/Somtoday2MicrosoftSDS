@@ -28,14 +28,16 @@ The publication rollback path requires Blob versioning. The supplied Bicep and d
 
 Redeploy the template to existing installations before running an application version that uses version-based rollback. Do not disable versioning or remove the lifecycle policy independently of the application publication contract.
 
-The application removes application-owned active staging Blobs at startup. This recovers staging space after an interrupted run but also means overlapping scheduled, manual, or retried runs are unsupported. Keep one active Job execution at a time.
+The application recognizes application-owned staging only by the exact `.staging/{compact UUIDv7}/{file}` tail plus producer metadata. It makes one cleanup attempt plus three complete retries at startup and after each dataset, trying every applicable Blob in each attempt. Exhausted cleanup emits a warning but does not fail the run, change a successful publication, roll back live output, or prevent later datasets. Remaining staging can contain personal data until a later startup or the storage lifecycle removes it, so operators must monitor cleanup warnings.
+
+Startup cleanup recovers staging space after an interrupted run but also means overlapping scheduled, manual, or retried runs are unsupported: it may remove the other run's staging data. Keep one active Job execution at a time.
 
 ## Azure Portal
 
 The Deploy to Azure button in the Dutch [README](../../README.md) uses `infra/azuredeploy.json`. `infra/main.bicep` remains the source; do not edit the generated ARM JSON manually. CI verifies that both representations remain aligned.
 
 1. Select the deployment button and choose subscription, resource group, and region.
-2. Supply at least `schoolUuids` as a JSON array and `somtodayClientId`; optionally adjust the two output-layout parameters.
+2. Supply at least `schoolUuids` as a JSON array and `somtodayClientId`; optionally choose `PROD`, `TEST`, or `ACCEPTATIE` and adjust the two output-layout parameters. NIGHTLY is not a production deployment parameter.
 3. Supply `somtodayClientSecret` only for initial bootstrap or rotation.
 4. After RBAC propagation, start one manual run and inspect logs and Blob output.
 5. Redeploy the same resource group and `namePrefix` without `somtodayClientSecret`.

@@ -134,7 +134,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
             return user => (accessor(user) ?? string.Empty).ToString();
         }
 
-        private static string NormalizeFormat(string configuredValue)
+        internal static string NormalizeFormat(string configuredValue)
         {
             if (configuredValue.StartsWith("{user.", StringComparison.Ordinal) && configuredValue.EndsWith('}'))
             {

@@ -63,6 +63,159 @@ public class OpenApiAuthenticationTests
         Assert.DoesNotContain(logger.Messages, message => message.Contains("client-secret", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    public async Task PermanentClientErrorsAreNotRetried(HttpStatusCode statusCode)
+    {
+        RecordingHandler handler = new(_ => new HttpResponseMessage(statusCode));
+        int delayCount = 0;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Program.ConnectWithRetryAsync(
+            SchoolUuid,
+            CreateSyncConfiguration(),
+            new RecordingHttpClientFactory(handler),
+            new CapturingLogger(),
+            new CapturingProgramLogger(),
+            CancellationToken.None,
+            (_, _) =>
+            {
+                delayCount++;
+                return Task.CompletedTask;
+            }));
+
+        Assert.Single(handler.Requests);
+        Assert.Equal(0, delayCount);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.RequestTimeout)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task TransientHttpFailuresUseAtMostFourTotalAttempts(HttpStatusCode statusCode)
+    {
+        RecordingHandler handler = new(_ => new HttpResponseMessage(statusCode));
+        int delayCount = 0;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Program.ConnectWithRetryAsync(
+            SchoolUuid,
+            CreateSyncConfiguration(),
+            new RecordingHttpClientFactory(handler),
+            new CapturingLogger(),
+            new CapturingProgramLogger(),
+            CancellationToken.None,
+            (delay, _) =>
+            {
+                Assert.Equal(TimeSpan.FromSeconds(2), delay);
+                delayCount++;
+                return Task.CompletedTask;
+            }));
+
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Equal(3, delayCount);
+    }
+
+    [Fact]
+    public async Task AuthenticationCanRecoverDuringTransientRetry()
+    {
+        int responseNumber = 0;
+        RecordingHandler handler = new(_ => ++responseNumber == 1
+            ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            : JsonResponse("{\"access_token\":\"token\"}"));
+
+        OpenAPIHelper helper = await Program.ConnectWithRetryAsync(
+            SchoolUuid,
+            CreateSyncConfiguration(),
+            new RecordingHttpClientFactory(handler),
+            new CapturingLogger(),
+            new CapturingProgramLogger(),
+            CancellationToken.None,
+            (_, _) => Task.CompletedTask);
+
+        Assert.True(helper.IsConnected);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task HttpTimeoutIsTransientAndBounded()
+    {
+        RecordingHandler handler = new(_ => throw new TaskCanceledException("HTTP timeout"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Program.ConnectWithRetryAsync(
+            SchoolUuid,
+            CreateSyncConfiguration(),
+            new RecordingHttpClientFactory(handler),
+            new CapturingLogger(),
+            new CapturingProgramLogger(),
+            CancellationToken.None,
+            (_, _) => Task.CompletedTask));
+
+        Assert.Equal(4, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task NetworkFailureIsTransientAndBounded()
+    {
+        RecordingHandler handler = new(_ => throw new HttpRequestException("network unavailable"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Program.ConnectWithRetryAsync(
+            SchoolUuid,
+            CreateSyncConfiguration(),
+            new RecordingHttpClientFactory(handler),
+            new CapturingLogger(),
+            new CapturingProgramLogger(),
+            CancellationToken.None,
+            (_, _) => Task.CompletedTask));
+
+        Assert.Equal(4, handler.Requests.Count);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"access_token\":123}")]
+    [InlineData("not-json")]
+    public async Task InvalidAuthenticationPayloadIsPermanent(string responseBody)
+    {
+        RecordingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
+        });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Program.ConnectWithRetryAsync(
+            SchoolUuid,
+            CreateSyncConfiguration(),
+            new RecordingHttpClientFactory(handler),
+            new CapturingLogger(),
+            new CapturingProgramLogger(),
+            CancellationToken.None,
+            (_, _) => Task.CompletedTask));
+
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task CancellationDuringRetryDelayStopsImmediately()
+    {
+        using CancellationTokenSource cancellation = new();
+        RecordingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Program.ConnectWithRetryAsync(
+            SchoolUuid,
+            CreateSyncConfiguration(),
+            new RecordingHttpClientFactory(handler),
+            new CapturingLogger(),
+            new CapturingProgramLogger(),
+            cancellation.Token,
+            (_, token) =>
+            {
+                cancellation.Cancel();
+                return Task.FromCanceled(token);
+            }));
+
+        Assert.Single(handler.Requests);
+    }
+
     [Fact]
     public async Task AuthenticationCancellationIsPropagated()
     {
@@ -263,6 +416,25 @@ public class OpenApiAuthenticationTests
         };
     }
 
+    private static SyncConfiguration CreateSyncConfiguration()
+    {
+        return new SyncConfiguration(
+            [SchoolUuid],
+            "client-id",
+            "client-secret",
+            SomEnvironmentConfig.Prod,
+            [],
+            [],
+            "https://account.blob.core.windows.net",
+            null,
+            "sds",
+            "output",
+            false,
+            true,
+            false,
+            false);
+    }
+
     private sealed class RecordingHttpClientFactory : IHttpClientFactory
     {
         private readonly HttpMessageHandler handler;
@@ -328,6 +500,22 @@ public class OpenApiAuthenticationTests
             Func<TState, Exception, string> formatter)
         {
             Messages.Add(formatter(state, exception));
+        }
+    }
+
+    private sealed class CapturingProgramLogger : ILogger<Program>
+    {
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception exception,
+            Func<TState, Exception, string> formatter)
+        {
         }
     }
 

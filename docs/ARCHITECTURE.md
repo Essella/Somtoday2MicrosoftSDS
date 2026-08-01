@@ -14,7 +14,7 @@ Owns the run lifecycle, composition root, institution isolation, output-scope an
 
 ### `SyncConfiguration` and `SettingsHelper`: validated settings
 
-`SyncConfiguration` builds immutable run settings and validates required Somtoday and Blob configuration. `SettingsHelper` stores and evaluates process-global username rules. `SettingsHelper.Initialize` changes process-wide static formatter state.
+`SyncConfiguration` builds immutable run settings and validates required Somtoday and Blob configuration. The plaintext Somtoday NIGHTLY environment is accepted only in Development. `SettingsHelper` stores and evaluates process-global username rules. `SettingsHelper.Initialize` changes process-wide static formatter state.
 
 - **Inputs:** Layered .NET configuration and the already-resolved client secret.
 - **Outputs:** An immutable `SyncConfiguration`, validation errors, and compiled username accessors.
@@ -73,13 +73,13 @@ Infrastructure does not provision Somtoday access, a Microsoft SDS ingestion con
 1. `Program` creates the generic host, logger, HTTP client factory, `FileHelper`, and `SomtodaySecretProvider`.
 2. The secret provider resolves Key Vault or Development credentials.
 3. `SyncConfiguration` validates run settings; `SettingsHelper` initializes username expressions separately.
-4. `BlobClientFactory` creates the authenticated Blob context. The Blob store creates the container if needed, and `DatasetPublisher` removes application-owned staging Blobs left by interrupted runs.
+4. `BlobClientFactory` creates the authenticated Blob context. The Blob store creates the container if needed, and `DatasetPublisher` recognizes exact application-owned UUIDv7 staging paths and makes up to four complete best-effort cleanup attempts. Exhausted cleanup warns and startup continues.
 5. The process retrieves the public production institution list once without authentication and matches each configured institution UUID.
-6. For each matched institution, the process authenticates against the configured environment, selects locations, and creates the complete output-layout plan before population eligibility is evaluated.
+6. For each matched institution, the process authenticates against the configured environment with at most four transient-only attempts and a cancellable two-second retry wait, selects locations, and creates the complete output-layout plan before population eligibility is evaluated.
 7. Locations within an institution and institutions themselves are downloaded sequentially. Group, employee, pupil, and optional guardian requests run concurrently within one location.
 8. `ExportPopulationResolver` resolves one shared population per location. Normal mode warns and omits locations without an included class; source-level institution failures are excluded from combined scopes while successfully resolved institutions remain publishable.
 9. For every planned output scope, the V1 and V2 helpers are both invoked with the same remaining ordered location populations, captured Amsterdam date, and guardian export policy. Neither version has an exclusion path. A conversion failure blocks that versioned publication unit but does not suppress the mandatory attempt for the other version or later output scopes.
-10. `Program` creates one compact UUIDv7 run identifier. `FileHelper` serializes the complete UTF-8 CSV set without a byte-order mark, and `DatasetPublisher` stages it once below `.staging/{RunId}/`, promotes it with at most four complete-set attempts, and uses application metadata plus Blob versions for complete-set rollback after exhausted promotion.
+10. `Program` creates one compact UUIDv7 run identifier. `FileHelper` serializes the complete UTF-8 CSV set without a byte-order mark, and `DatasetPublisher` stages it once below `.staging/{RunId}/`, promotes it with at most four complete-set attempts, and uses application metadata plus Blob versions for complete-set rollback after exhausted promotion. Dataset staging cleanup also gets four complete best-effort attempts and never changes a successful publication after exhaustion.
 11. A successful rollback isolates the publication failure to that dataset; missing or failed rollback propagates a fatal exception so `Program` stops later datasets. Application cancellation bypasses rollback.
 12. The process returns `0` only when no institution was recorded as failed; configuration, cancellation, secret, storage, discovery, data-download, layout, conversion, or publication failures return `1`.
 
@@ -91,16 +91,17 @@ Infrastructure does not provision Somtoday access, a Microsoft SDS ingestion con
 - Institution and location abbreviations must remain non-empty after normalization. Slash and backslash become `_`, and paths are compared case-insensitively.
 - Output paths follow both independent layout settings. Paths are compared case-insensitively; location-only cross-institution collisions receive an institution prefix, while unresolved collisions fail the affected institution.
 - `OpenAPIHelper` returns every selected location aggregate, including aggregates with empty source collections. Normal mode excludes locations without an included class from their planned scope; existing Blob output is left unchanged only when the complete scope has no eligible location.
+- Institution authentication gets at most four total attempts. Network and HTTP timeout failures, HTTP 408, HTTP 429, and HTTP 5xx responses are transient; other HTTP 4xx responses and invalid authentication payloads are permanent. Only transient failures are retried, with the existing cancellable two-second application delay.
 - Class identifiers retain their version-specific prefix checks: V1 checks the unfiltered group name, V2.1 checks the filtered group name, and both emit the filtered name with the Amsterdam school-year suffix.
 - A public-matching, discovery, output-layout, or data-download failure in one institution does not prevent unaffected institutions from being attempted or published. Combined scopes publish the successful subset, and any recorded institution failure makes the process exit with `1`.
 - Grouped conversion preserves each version's existing class identifier formula and blocks a versioned dataset when different source classes produce the same case-insensitive identifier. V1 retains one teacher or pupil row per location; V2.1 deduplicates one source person across locations and retains organization roles.
 - Authentication bodies, tokens, secrets, API bodies, and raw exception messages are excluded from application error summaries by current tests.
 - Cancellation flows through retries, HTTP, Key Vault, and Blob operations and results in exit code `1`.
-- Publication uses the Azure Blob SDK defaults and adds no operation timeout or delay. Startup staging cleanup makes overlapping application runs unsupported.
+- Publication uses the Azure Blob SDK defaults and adds no operation timeout or delay. Staging cleanup gets one initial complete attempt plus three complete retries, tries every applicable Blob in each attempt, and remains best effort after exhaustion. Cleanup exhaustion warns without changing publication success, live output, institution status, or run continuation. Exact run-ID path recognition protects live paths containing a `.staging` segment. Startup staging cleanup makes overlapping application runs unsupported.
 - Production infrastructure enables Blob versioning and expires previous versions after seven days; Blob soft delete can retain lifecycle-deleted versions temporarily beyond that point.
 - The username formatter accepts every public property on the generated `Medewerker` or `Leerling` model. The types include unsuitable or sensitive fields, and their property sets differ.
 - Examples of exposed but unsuitable or sensitive properties include BSN/ECK identifiers, dates, phone numbers, and nested objects.
-- Composite username text must currently start with `{user.` and end with `}` or normalization treats the entire value as one property. Tests do not yet define every supported Dynamic LINQ operation, null case, or casing result.
+- Composite username text must currently start with `{user.` and end with `}` or normalization treats the entire value as one property. Bare properties, multiple expressions with literals, the documented `ToLower()` example, and the documented concatenation example have regression coverage; other Dynamic LINQ operations and null or nested-property behavior remain undefined.
 
 ## Known deviations
 

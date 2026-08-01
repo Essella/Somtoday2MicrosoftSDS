@@ -29,7 +29,7 @@ De [projectkern](docs/PROJECT_CORE.md) en de gerichte contracten zijn de leidend
 - Een Azure-abonnement en rechten om resources en roltoewijzingen te maken.
 - Voor lokale ontwikkeling: de .NET 10 SDK.
 
-De publieke productielijst met instellingen is zonder authenticatie beschikbaar via [https://api.somtoday.nl/rest/v1/connect/instelling](https://api.somtoday.nl/rest/v1/connect/instelling). Deze lijst is de gezaghebbende bron voor `Instelling.Afkorting`, ook wanneer synchronisatiegegevens uit TEST, ACCEPTATIE of NIGHTLY komen.
+De publieke productielijst met instellingen is zonder authenticatie beschikbaar via [https://api.somtoday.nl/rest/v1/connect/instelling](https://api.somtoday.nl/rest/v1/connect/instelling). Deze lijst is de gezaghebbende bron voor `Instelling.Afkorting`, ook wanneer synchronisatiegegevens uit TEST, ACCEPTATIE of de uitsluitend voor Development toegestane NIGHTLY-omgeving komen. NIGHTLY gebruikt HTTP voor schooldata en mag niet met echte persoonsgegevens worden gebruikt.
 
 ```powershell
 Invoke-WebRequest -Uri 'https://api.somtoday.nl/rest/v1/connect/instelling'
@@ -49,7 +49,11 @@ Tijdens een normale run neemt de applicatie een vestiging alleen op wanneer mins
 
 Als één instelling niet publiek kan worden gematcht, geen geldige uitvoerpaden oplevert of de brongegevens niet kunnen worden opgehaald, publiceert een samengevoegde scope de succesvol opgeloste instellingen en eindigt de run met exitcode `1`. Een conversie- of uploadfout blokkeert de betrokken SDS-versie en markeert alle deelnemende instellingen als mislukt, maar verhindert de verplichte poging voor de andere versie of een volgende scope niet. Als de publieke productielijst met instellingen zelf niet bereikbaar is, wordt geen SDS-dataset gepubliceerd.
 
+Somtoday-authenticatie krijgt maximaal vier pogingen en wordt alleen herhaald bij netwerk- of HTTP-timeouts, HTTP 408, HTTP 429 en HTTP 5xx. Overige clientfouten en ongeldige tokenantwoorden stoppen direct voor de betrokken instelling.
+
 Iedere volledige CSV-set wordt eerst in geheugen gemaakt en eenmaal naar `.staging/{RunId}/` geschreven, waarbij `RunId` één compacte UUIDv7 voor de volledige applicatierun is. Daarna kopieert de applicatie de set intern naar de live bestandsnamen, met één eerste promotiepoging en maximaal drie volledige herpogingen. Na vier mislukte promoties herstelt zij de nieuwste oudere, volledige set die aantoonbaar door deze applicatie is gepubliceerd. Handmatig geplaatste bestanden zonder applicatiemetadata worden normaal overschreven, maar nooit als automatische herstelbron gebruikt. Als geen volledige herstelset bestaat of herstel mislukt, stopt de gehele run; bij geslaagd herstel kunnen volgende datasets doorgaan.
+
+Staging-opruiming krijgt zowel bij startup als na iedere dataset één poging plus drie volledige herpogingen. Iedere poging probeert alle toepasselijke Blobs. Als opruimen daarna nog mislukt, volgt een waarschuwing maar gaat de run door; een succesvolle publicatie blijft succesvol en live output wordt niet teruggedraaid. Restanten kunnen bij een volgende startup opnieuw worden geprobeerd.
 
 De Azure-template schakelt Blob-versioning in en bewaart vorige versies via een lifecycle-regel zeven dagen. De bestaande soft-deleteperiode van zeven dagen kan door de lifecycle verwijderde versies daarna nog tijdelijk herstelbaar houden. Guardian-sync aan publiceert de guardianbestanden ook als die alleen headers bevatten; guardian-sync uit verwijdert de bekende guardianbestanden bij promotie. Gelijktijdige of overlappende applicatieruns worden niet ondersteund.
 

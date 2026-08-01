@@ -54,6 +54,8 @@ The mapping is:
 
 Determine the source of fallback `OuderVerzorger.Telefoonnummer` by comparing it with the explicit home, mobile, and work values, then apply the corresponding secret-number flag. Secret numbers are never exported. When multiple permitted values exist, preference is mobile, then home, then work.
 
+A non-empty exported phone value must consist of exactly one leading `+`, followed by 2 through 15 ASCII digits; the first digit must be `1` through `9`. Preserve the existing conversion of Dutch `0...` and international `00...` source values, but emit an empty phone value when the normalized result does not meet this rule. An invalid optional phone does not exclude the guardian or any otherwise valid relationship.
+
 When guardian sync is enabled but generates no guardians or relationships, guardian-specific files are still emitted with headers only. Published-file removal when guardian sync is disabled is defined by the [publication contract](PUBLICATION.md).
 
 Somtoday does not indicate whether an adult pupil consented to guardian access. Keep the weekly guardian summary in Microsoft 365 disabled unless the school has independently established that enabling it is appropriate, and complete a privacy assessment before using guardian sync.
