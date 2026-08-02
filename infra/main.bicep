@@ -46,7 +46,7 @@ param replicaTimeoutSeconds int = 3600
 @minValue(0)
 param replicaRetryLimit int = 1
 
-@description('Verplicht: JSON-array met minimaal een Somtoday-instellings-UUID. Voorbeeld met een item: [&quot;11111111-1111-1111-1111-111111111111&quot;]. Voorbeeld met twee items: [&quot;11111111-1111-1111-1111-111111111111&quot;, &quot;22222222-2222-2222-2222-222222222222&quot;].')
+@description('Verplicht: JSON-array met minimaal een Somtoday-instellings-UUID. Voorbeeld met een item: [\\"11111111-1111-1111-1111-111111111111\\"]. Voorbeeld met twee items: [\\"11111111-1111-1111-1111-111111111111\\", \\"22222222-2222-2222-2222-222222222222\\"].')
 @minLength(1)
 param schoolUuids array
 
@@ -67,10 +67,10 @@ param somtodayEnvironment string = 'PROD'
 @minLength(1)
 param somtodayClientSecret string
 
-@description('Optionele JSON-array met op te nemen locatiecodes. Voorbeeld: [&quot;LOC1&quot;, &quot;LOC2&quot;]. Leeg betekent alle locaties.')
+@description('Optionele JSON-array met op te nemen locatiecodes. Voorbeeld: [\\"LOC1\\", \\"LOC2\\"]. Leeg betekent alle locaties.')
 param includedLocationCodes array = []
 
-@description('Optionele JSON-array met uit te sluiten locatiecodes. Voorbeeld: [&quot;LOC1&quot;, &quot;LOC2&quot;]. Uitsluiting heeft voorrang op opname.')
+@description('Optionele JSON-array met uit te sluiten locatiecodes. Voorbeeld: [\\"LOC1\\", \\"LOC2\\"]. Uitsluiting heeft voorrang op opname.')
 param excludedLocationCodes array = []
 
 @description('Exporteer SDS-guardiangebruikers en -relaties; standaard: false.')
