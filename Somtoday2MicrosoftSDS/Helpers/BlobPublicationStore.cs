@@ -156,6 +156,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 await foreach (BlobItem item in _containerClient.GetBlobsAsync(
                     BlobTraits.Metadata,
                     BlobStates.None,
+                    prefix: string.Empty,
                     cancellationToken: cancellationToken))
                 {
                     if (DatasetPublisher.IsOwnedStagingBlob(

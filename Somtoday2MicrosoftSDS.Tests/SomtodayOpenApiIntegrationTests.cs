@@ -111,7 +111,12 @@ public sealed class SomtodayOpenApiIntegrationTests : IClassFixture<SomtodayOpen
 
 public sealed class SomtodayIntegrationFactAttribute : FactAttribute
 {
-    public SomtodayIntegrationFactAttribute(string displayName, bool requiresGuardians = false)
+    public SomtodayIntegrationFactAttribute(
+        string displayName,
+        bool requiresGuardians = false,
+        [System.Runtime.CompilerServices.CallerFilePath] string sourceFilePath = null,
+        [System.Runtime.CompilerServices.CallerLineNumber] int sourceLineNumber = -1)
+        : base(sourceFilePath, sourceLineNumber)
     {
         DisplayName = displayName;
 
@@ -149,7 +154,7 @@ public sealed class SomtodayOpenApiFixture : IAsyncLifetime
 
     internal OpenAPIHelper Api { get; private set; }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         SchoolUuid = ReadSchoolUuid();
         string clientId = ReadRequiredVariable(ClientIdVariable);
@@ -171,10 +176,10 @@ public sealed class SomtodayOpenApiFixture : IAsyncLifetime
         }
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         httpClientFactory?.Dispose();
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     internal Task<List<Vestiging>> GetLocationsAsync()

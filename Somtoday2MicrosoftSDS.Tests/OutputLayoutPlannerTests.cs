@@ -262,7 +262,8 @@ public sealed class OutputLayoutPlannerTests
             separateByLocation: true);
 
         OutputPublicationScope firstScope = Assert.Single(
-            plan.Scopes.Where(scope => scope.SchoolUuids.Contains(FirstSchoolUuid)));
+            plan.Scopes,
+            scope => scope.SchoolUuids.Contains(FirstSchoolUuid));
         OutputPublicationScope remainingScope = firstScope.Excluding(
             new HashSet<Guid> { SecondSchoolUuid });
         OutputPublicationScope replannedWithoutSecondSchool = Assert.Single(OutputLayoutPlanner.Create(
