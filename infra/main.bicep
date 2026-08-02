@@ -11,32 +11,6 @@ param imageReference string = 'ghcr.io/essella/somtoday2microsoftsds:latest'
 @description('Cron-schema in UTC voor de Job. Standaard: dagelijks om 03:00 en 15:00 UTC (0 3,15 * * *). Dat betekent 04:00 en 16:00 in Nederland (CET/CEST).')
 param cronExpression string = '0 3,15 * * *'
 
-@description('vCPU per Job-replica. Kies een ondersteunde waarde tussen 0.25 en 2.0; standaard: 0.25 vCPU.')
-@allowed([
-  '0.25'
-  '0.5'
-  '0.75'
-  '1.0'
-  '1.25'
-  '1.5'
-  '1.75'
-  '2.0'
-])
-param cpu string = '0.25'
-
-@description('Geheugen per Job-replica. Kies een ondersteunde waarde tussen 0.5 en 4 GiB; standaard: 1 GiB.')
-@allowed([
-  '0.5Gi'
-  '1Gi'
-  '1.5Gi'
-  '2Gi'
-  '2.5Gi'
-  '3Gi'
-  '3.5Gi'
-  '4Gi'
-])
-param memory string = '1Gi'
-
 @description('Maximale looptijd van een Job-replica in seconden (1-3600); standaard: 3600 seconden.')
 @minValue(1)
 @maxValue(3600)
@@ -46,9 +20,12 @@ param replicaTimeoutSeconds int = 3600
 @minValue(0)
 param replicaRetryLimit int = 1
 
-@description('Verplicht: JSON-array met minimaal een Somtoday-instellings-UUID. Voorbeeld met een item: [\\"11111111-1111-1111-1111-111111111111\\"]. Voorbeeld met twee items: [\\"11111111-1111-1111-1111-111111111111\\", \\"22222222-2222-2222-2222-222222222222\\"].')
+@description('Verplicht: Somtoday-instellings-UUIDs. Voorbeelden: 11111111-1111-1111-1111-111111111111 en 22222222-2222-2222-2222-222222222222.')
 @minLength(1)
-param schoolUuids array
+param schoolUuids array = [
+  '11111111-1111-1111-1111-111111111111'
+  '22222222-2222-2222-2222-222222222222'
+]
 
 @description('Verplicht: OAuth-client-ID van Somtoday Connect.')
 @minLength(1)
@@ -67,11 +44,14 @@ param somtodayEnvironment string = 'PROD'
 @minLength(1)
 param somtodayClientSecret string
 
-@description('Optionele JSON-array met op te nemen locatiecodes. Voorbeeld: [\\"LOC1\\", \\"LOC2\\"]. Leeg betekent alle locaties.')
+@description('Locatiecodes om op te nemen.')
 param includedLocationCodes array = []
 
-@description('Optionele JSON-array met uit te sluiten locatiecodes. Voorbeeld: [\\"LOC1\\", \\"LOC2\\"]. Uitsluiting heeft voorrang op opname.')
-param excludedLocationCodes array = []
+@description('Locatiecodes om uit te sluiten.')
+param excludedLocationCodes array = [
+  'School1'
+  'School2'
+]
 
 @description('Exporteer SDS-guardiangebruikers en -relaties; standaard: false.')
 param enableGuardianSync bool = false
@@ -104,6 +84,10 @@ var logAnalyticsName = '${normalizedPrefix}-logs'
 var environmentName = '${normalizedPrefix}-env'
 var jobName = '${normalizedPrefix}-job'
 var containerName = 'somtoday2microsoftsds'
+var missingSomtodayClientSecretMarker = '__SOMTODAY_CLIENT_SECRET_REQUIRED__'
+var validatedSomtodayClientSecret = somtodayClientSecret == missingSomtodayClientSecretMarker
+  ? fail('somtodayClientSecret must be supplied with a non-empty value.')
+  : somtodayClientSecret
 var slashNormalizedOutputFolder = replace(trim(outputFolder), '\\', '/')
 var normalizedOutputFolderSegments = map(
   filter(split(slashNormalizedOutputFolder, '/'), segment => !empty(trim(segment))),
@@ -196,7 +180,7 @@ var secretEnvironmentVariables = [
 var jobSecrets = [
   {
     name: 'somtoday-client-secret'
-    value: somtodayClientSecret
+    value: validatedSomtodayClientSecret
   }
 ]
 
@@ -362,8 +346,8 @@ resource scheduledJob 'Microsoft.App/jobs@2024-03-01' = {
             secretEnvironmentVariables
           )
           resources: {
-            cpu: json(cpu)
-            memory: memory
+            cpu: json('0.5')
+            memory: '1Gi'
           }
         }
       ]

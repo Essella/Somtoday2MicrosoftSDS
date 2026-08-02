@@ -17,11 +17,13 @@ Operators need an Azure subscription, permission to create resources and role as
 
 The identity receives `Storage Blob Data Contributor` on the output container. The Job secret is mapped to `Somtoday__ClientSecret`; it is not accessed through the managed identity.
 
-Defaults are public `latest` image, `0 4,16 * * *` UTC schedule (04:00 and 16:00 UTC), one replica, 0.25 vCPU, 1 GiB memory, 3,600-second Job timeout, and one Container Apps retry. Pin production deployments to a release tag or digest. Container Apps cron schedules are evaluated in UTC.
+Defaults are public `latest` image, `0 4,16 * * *` UTC schedule (04:00 and 16:00 UTC), one replica, the smallest valid Consumption combination of 0.25 vCPU and 0.5 GiB memory, 3,600-second Job timeout, and one Container Apps retry. CPU and memory are fixed in the template so the Portal cannot select an invalid combination. Pin production deployments to a release tag or digest. Container Apps cron schedules are evaluated in UTC.
 
 All resources use the region of the selected resource group. The Azure Portal already supplies that standard **Region** field, so the template no longer displays a separate location parameter with the unevaluated `resourceGroup().location` expression.
 
 Resources that support tags receive the native tags of the selected resource group. Manage those tags on the resource group in Azure Portal; the template has no separate tags parameter.
+
+`schoolUuids` displays two editable UUID examples; replace both with the UUIDs of the Somtoday institutions to synchronize. `includedLocationCodes` defaults to an empty array. `excludedLocationCodes` displays `School1` and `School2` as editable example values; remove them when no locations must be excluded.
 
 Output is separated by institution by default and combines selected locations within each institution. The `separateByInstitution` and `separateByLocation` deployment parameters map to the application's independent output-layout settings.
 
