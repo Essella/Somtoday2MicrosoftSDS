@@ -128,7 +128,7 @@ jobs:
             and (any(.resources[]; .type | startswith("Microsoft.KeyVault/")) | not)
             and (any(.resources[]; .type == "Microsoft.Authorization/roleAssignments"
               and (.properties.roleDefinitionId | contains("b86a8fe4-44ce-4948-aee5-eccb2c155cd7"))) | not)
-            and .parameters.somtodayClientSecret.type == "secureString"
+            and .parameters.somtodayClientSecret.type == "securestring"
             and .parameters.somtodayClientSecret.minLength == 1
             and any(.resources[]; .type == "Microsoft.Storage/storageAccounts"
               and .kind == "StorageV2"
