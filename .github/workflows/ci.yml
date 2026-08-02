@@ -121,8 +121,8 @@ jobs:
                 and contains("somtoday-client-secret"))
               and (.properties.configuration.secrets
                 | contains("somtoday-client-secret"))
-              and .properties.template.containers[0].resources.cpu == "[json('0.25')]"
-              and .properties.template.containers[0].resources.memory == "0.5Gi")
+              and .properties.template.containers[0].resources.cpu == "[json('0.5')]"
+              and .properties.template.containers[0].resources.memory == "1Gi")
             and (.parameters | has("cpu") | not)
             and (.parameters | has("memory") | not)
             and (any(.resources[]; .type | startswith("Microsoft.KeyVault/")) | not)

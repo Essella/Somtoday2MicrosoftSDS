@@ -17,7 +17,7 @@ Operators need an Azure subscription, permission to create resources and role as
 
 The identity receives `Storage Blob Data Contributor` on the output container. The Job secret is mapped to `Somtoday__ClientSecret`; it is not accessed through the managed identity.
 
-Defaults are public `latest` image, `0 4,16 * * *` UTC schedule (04:00 and 16:00 UTC), one replica, the smallest valid Consumption combination of 0.25 vCPU and 0.5 GiB memory, 3,600-second Job timeout, and one Container Apps retry. CPU and memory are fixed in the template so the Portal cannot select an invalid combination. Pin production deployments to a release tag or digest. Container Apps cron schedules are evaluated in UTC.
+Defaults are public `latest` image, `0 4,16 * * *` UTC schedule (04:00 and 16:00 UTC), one replica, a fixed Consumption combination of 0.5 vCPU and 1 GiB memory, 3,600-second Job timeout, and one Container Apps retry. CPU and memory are fixed in the template so the Portal cannot select an invalid combination. Pin production deployments to a release tag or digest. Container Apps cron schedules are evaluated in UTC.
 
 All resources use the region of the selected resource group. The Azure Portal already supplies that standard **Region** field, so the template no longer displays a separate location parameter with the unevaluated `resourceGroup().location` expression.
 
