@@ -28,6 +28,8 @@ Every planned output scope always schedules and attempts both the `v1` and `v2` 
 
 Slash and backslash characters in abbreviations become `_`. Paths are compared case-insensitively.
 
+The first live segment relative to `Output:Folder` must not equal `.staging` in any casing. That segment is reserved for application staging. If institution or location grouping would create such a live scope, output-layout validation fails only the affected institution through the existing institution failure boundary.
+
 An institution folder is named from the matching public `Instelling.Afkorting`; a location folder is named from `Vestiging.Afkorting`.
 
 Every selected location must have a non-empty abbreviation after trimming. With an empty inclusion list, a location with a blank abbreviation remains selected and output-layout validation fails only its institution; it is not silently omitted. With a non-empty inclusion list, a blank abbreviation cannot match and remains unselected.
@@ -62,24 +64,36 @@ Each mandatory SDS-version dataset from the table is a separate, failure-isolate
    - `syncidrunutc=<the job's UTC ISO-8601 run timestamp>`
    - `syncidsdsversion=v1|v2`
    - `syncidguardians=true|false`
-3. Create one UUIDv7 `RunId` when the application run starts and upload the complete set once to `{LivePrefix}/.staging/{RunId}/` before overwriting live output.
+3. Create one UUIDv7 `RunId` when the application run starts and upload the complete set once to `{Output:Folder}/.staging/{RunId}/{FileName}` before overwriting live output. There is one shared staging root directly below the normalized output prefix; it is not split by live scope, SDS V1, or SDS V2.1.
 4. Promote each staged file to its known live name with a server-side Blob copy.
+
+Do not add Blob Index Tags. The four metadata values above are the complete application metadata contract.
+
+`LivePrefix` determines only the promotion and rollback destination. Publication is sequential within one process: one dataset is completely staged and promoted, and its cleanup processing finishes, before the next scope or SDS version starts. Consecutive datasets can therefore reuse the same staging names. Every dataset uploads and overwrites all of its required staging files before any of them is promoted, including when cleanup of the preceding dataset failed. A remaining file is never promoted as part of another dataset without that new upload.
 
 Promotion gets one initial attempt plus three complete-set retries. Every retry starts again with the first promotion action; staging is not uploaded again. Use the Azure Blob SDK's default retries and timeouts without an application timeout, delay, or snapshot layer. A successful promotion can temporarily expose old and new files during the same run.
 
 A staging or conversion failure marks the affected dataset and its participating institutions as failed while leaving live output unchanged. It does not suppress the mandatory attempt for another SDS version or later scope. Application cancellation stops immediately without rollback. No success-marker Blob is used.
 
-Staging is run-bound and is never reused by a later run. Recognize a Blob as application-owned staging only when its path ends in the exact segment structure `.staging/{RunId}/{FileName}`, `RunId` is a compact UUIDv7, `FileName` is one non-empty path segment, and the producer metadata has the exact application value. A `.staging` segment in `Output:Folder`, an institution abbreviation, or a location abbreviation does not by itself make live output staging. Old paths from another convention may therefore remain; avoiding deletion of possible live output takes precedence.
+Staging is temporary work data for only the current application run and the dataset then being promoted. A later run and rollback must never depend on it. Recognize a Blob as application-owned staging only when its path ends in the exact lowercase segment structure `.staging/{RunId}/{FileName}`, `RunId` is a compact UUIDv7, `FileName` is one non-empty path segment, and the producer metadata has the exact application value. Startup cleanup recognizes both the current output-root path and legacy `{LivePrefix}/.staging/{RunId}/{FileName}` paths through that exact tail and metadata rule, so existing remnants need no manual migration. Other lookalikes are left untouched.
 
 Delete the dataset's staging files after successful promotion or completed error handling. Cleanup gets one initial complete attempt plus three complete retries, without an application delay and while retaining Azure SDK defaults. Every attempt tries every known staging Blob even when an individual deletion fails. Exhausted cleanup logs one safe warning only: it does not roll back live output, change a successful `DatasetPublicationResult`, fail participating institutions, suppress later SDS versions or scopes, or replace an existing publication, rollback, or cancellation failure.
 
 At startup, apply the same four-attempt best-effort policy to all recognized application-owned staging Blobs left by an aborted run. Exhausted startup cleanup logs a warning and the new run continues because the new run uses its own `RunId`. Staging that remains may be ignored and retried at a later startup. Application cancellation stops cleanup immediately and is never converted into a cleanup warning. Runs must not overlap: startup cleanup is allowed to remove another run's staging data, so overlapping runs are unsupported.
 
+## Infrastructure staging retention
+
+The supplied infrastructure normalizes `Output:Folder` by trimming outer whitespace, converting backslashes to slashes, removing empty segments, trimming individual segments, and rejecting `.` and `..`. It uses that same value for both runtime `Output__Folder` and lifecycle prefix `{Container}/{NormalizedOutputFolder}/.staging/`.
+
+For block Blobs below that prefix, lifecycle management makes the current base Blob eligible for deletion after more than one day since modification and previous staging versions eligible for deletion after more than one day since creation. Azure lifecycle processing is asynchronous: one day is an eligibility boundary, not an exact deletion time. The general seven-day retention for previous live Blob versions and the seven-day Blob soft-delete period remain in force. A lifecycle-deleted staging Blob can consequently remain temporarily recoverable, but the application assigns it no functional value.
+
+The lifecycle rule uses its path prefix and Blob type only, without a Blob Index Tag filter. If an operator manually overrides runtime `Output__Folder`, the lifecycle policy must be redeployed with the same value; otherwise runtime staging and infrastructure retention diverge.
+
 ## Complete-set rollback from base Blobs and Blob versions
 
 [Blob versioning](https://learn.microsoft.com/en-us/azure/storage/blobs/versioning-overview) must be enabled for the output storage account. Promotion does not inspect existing live files, metadata, or version IDs. Manually initialized or corrected live files are therefore overwritten normally.
 
-Only after all four promotion attempts fail, list base Blobs and versions for the dataset's known live file names. A listed item is an eligible rollback source only when all four application metadata values are present and valid. Exclude the current failed run, group older sources by run timestamp, SDS version, and guardian setting, and select the newest older group that is complete. If retries created multiple sources for one file and run timestamp, select the source with the newest Blob last-modified timestamp and then the newest parseable version timestamp.
+Only after all four promotion attempts fail, list base Blobs and versions for the dataset's known live file names. Staging is never enumerated or selected for rollback. A listed live item is an eligible rollback source only when all four application metadata values are present and valid. Exclude the current failed run, group older sources by run timestamp, SDS version, and guardian setting, and select the newest older group that is complete. If retries created multiple sources for one file and run timestamp, select the source with the newest Blob last-modified timestamp and then the newest parseable version timestamp.
 
 A complete group contains:
 

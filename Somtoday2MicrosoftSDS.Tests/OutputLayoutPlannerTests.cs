@@ -32,6 +32,90 @@ public sealed class OutputLayoutPlannerTests
         Assert.Empty(plan.FailedSchoolUuids);
     }
 
+    [Theory]
+    [InlineData(false, ".staging", "sds/output/VALID")]
+    [InlineData(true, ".StAgInG", "sds/output/VALID/LOC")]
+    public void ReservedInstitutionFirstSegmentFailsOnlyThatInstitution(
+        bool separateByLocation,
+        string reservedAbbreviation,
+        string expectedSurvivingPrefix)
+    {
+        OutputLayoutPlan plan = OutputLayoutPlanner.Create(
+            [
+                School(FirstSchoolUuid, reservedAbbreviation, "BAD"),
+                School(SecondSchoolUuid, "VALID", "LOC")
+            ],
+            "sds/output",
+            separateByInstitution: true,
+            separateByLocation);
+
+        OutputPublicationScope survivingScope = Assert.Single(plan.Scopes);
+        Assert.Equal(expectedSurvivingPrefix, survivingScope.BasePrefix);
+        Assert.Equal(SecondSchoolUuid, Assert.Single(survivingScope.SchoolUuids));
+        Assert.Equal(FirstSchoolUuid, Assert.Single(plan.FailedSchoolUuids));
+        Assert.Single(plan.Issues);
+    }
+
+    [Theory]
+    [InlineData(".staging")]
+    [InlineData(".STAGING")]
+    [InlineData(".StAgInG")]
+    public void ReservedLocationFirstSegmentFailsOnlyThatInstitution(string reservedAbbreviation)
+    {
+        OutputLayoutPlan plan = OutputLayoutPlanner.Create(
+            [
+                School(FirstSchoolUuid, "INVALID", reservedAbbreviation),
+                School(SecondSchoolUuid, "VALID", "LOC")
+            ],
+            "sds/output",
+            separateByInstitution: false,
+            separateByLocation: true);
+
+        OutputPublicationScope survivingScope = Assert.Single(plan.Scopes);
+        Assert.Equal("sds/output/LOC", survivingScope.BasePrefix);
+        Assert.Equal(SecondSchoolUuid, Assert.Single(survivingScope.SchoolUuids));
+        Assert.Equal(FirstSchoolUuid, Assert.Single(plan.FailedSchoolUuids));
+        Assert.Single(plan.Issues);
+    }
+
+    [Fact]
+    public void StagingAbbreviationsAreAllowedWhenGroupingAddsNoReservedFirstSegment()
+    {
+        OutputLayoutPlan combinedPlan = OutputLayoutPlanner.Create(
+            [School(FirstSchoolUuid, ".staging", ".STAGING")],
+            "sds/output",
+            separateByInstitution: false,
+            separateByLocation: false);
+        OutputLayoutPlan nestedLocationPlan = OutputLayoutPlanner.Create(
+            [School(FirstSchoolUuid, "SCHOOL", ".STAGING")],
+            "sds/output",
+            separateByInstitution: true,
+            separateByLocation: true);
+
+        Assert.Equal("sds/output", Assert.Single(combinedPlan.Scopes).BasePrefix);
+        Assert.Empty(combinedPlan.FailedSchoolUuids);
+        Assert.Equal("sds/output/SCHOOL/.STAGING", Assert.Single(nestedLocationPlan.Scopes).BasePrefix);
+        Assert.Empty(nestedLocationPlan.FailedSchoolUuids);
+    }
+
+    [Fact]
+    public void LocationOnlyDisambiguationCanMakeStagingLocationSegmentsSafe()
+    {
+        OutputLayoutPlan plan = OutputLayoutPlanner.Create(
+            [
+                School(FirstSchoolUuid, "FIRST", ".staging"),
+                School(SecondSchoolUuid, "SECOND", ".STAGING")
+            ],
+            "sds/output",
+            separateByInstitution: false,
+            separateByLocation: true);
+
+        Assert.Equal(
+            ["sds/output/FIRST_.staging", "sds/output/SECOND_.STAGING"],
+            plan.Scopes.Select(scope => scope.BasePrefix));
+        Assert.Empty(plan.FailedSchoolUuids);
+    }
+
     [Fact]
     public void LocationOnlyLayoutDisambiguatesOnlyCrossInstitutionCollisions()
     {

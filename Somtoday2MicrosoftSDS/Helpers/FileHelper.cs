@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using System.Text;
 using CsvHelper;
 using CsvHelper.Configuration;
@@ -45,18 +46,19 @@ namespace Somtoday2MicrosoftSDS.Helpers
         {
             List<PublicationFile> files =
             [
-                SerializeCsv<School, SchoolCSVMap>("School.csv", sdsCsv.Schools),
-                SerializeCsv<Section, SectionCSVMap>("Section.csv", sdsCsv.Sections),
-                SerializeCsv<Teacher, TeacherCSVMap>("Teacher.csv", sdsCsv.Teachers),
-                SerializeCsv<Student, StudentCSVMap>("Student.csv", sdsCsv.Students),
-                SerializeCsv<TeacherRoster, TeacherRosterCSVMap>("TeacherRoster.csv", sdsCsv.TeacherRosters),
-                SerializeCsv<StudentEnrollment, StudentEnrollmentCSVMap>("StudentEnrollment.csv", sdsCsv.StudentEnrollments)
+                SerializeCsv<School, SchoolCSVMap>("V1", "School.csv", sdsCsv.Schools),
+                SerializeCsv<Section, SectionCSVMap>("V1", "Section.csv", sdsCsv.Sections),
+                SerializeCsv<Teacher, TeacherCSVMap>("V1", "Teacher.csv", sdsCsv.Teachers),
+                SerializeCsv<Student, StudentCSVMap>("V1", "Student.csv", sdsCsv.Students),
+                SerializeCsv<TeacherRoster, TeacherRosterCSVMap>("V1", "TeacherRoster.csv", sdsCsv.TeacherRosters),
+                SerializeCsv<StudentEnrollment, StudentEnrollmentCSVMap>("V1", "StudentEnrollment.csv", sdsCsv.StudentEnrollments)
             ];
 
             if (includeGuardianSync)
             {
-                files.Add(SerializeCsv<Guardian, GuardianCSVMap>("User.csv", sdsCsv.User));
+                files.Add(SerializeCsv<Guardian, GuardianCSVMap>("V1", "User.csv", sdsCsv.User));
                 files.Add(SerializeCsv<GuardianRelationship, GuardianRelationshipCSVMap>(
+                    "V1",
                     "Guardianrelationship.csv",
                     sdsCsv.Guardianrelationship));
             }
@@ -78,16 +80,17 @@ namespace Somtoday2MicrosoftSDS.Helpers
         {
             List<PublicationFile> files =
             [
-                SerializeCsv<Orgs, OrgsClassMap>("orgs.csv", sdsCsv.Orgs),
-                SerializeCsv<Users, UsersClassMap>("users.csv", sdsCsv.Users),
-                SerializeCsv<Roles, RolesClassMap>("roles.csv", sdsCsv.Roles),
-                SerializeCsv<Classes, ClassesClassMap>("classes.csv", sdsCsv.Classes),
-                SerializeCsv<Enrollments, EnrollmentsClassMap>("enrollments.csv", sdsCsv.Enrollments)
+                SerializeCsv<Orgs, OrgsClassMap>("V2.1", "orgs.csv", sdsCsv.Orgs),
+                SerializeCsv<Users, UsersClassMap>("V2.1", "users.csv", sdsCsv.Users),
+                SerializeCsv<Roles, RolesClassMap>("V2.1", "roles.csv", sdsCsv.Roles),
+                SerializeCsv<Classes, ClassesClassMap>("V2.1", "classes.csv", sdsCsv.Classes),
+                SerializeCsv<Enrollments, EnrollmentsClassMap>("V2.1", "enrollments.csv", sdsCsv.Enrollments)
             ];
 
             if (includeGuardianSync)
             {
                 files.Add(SerializeCsv<Relationships, RelationshipsClassMap>(
+                    "V2.1",
                     "relationships.csv",
                     sdsCsv.Relationships));
             }
@@ -106,25 +109,60 @@ namespace Somtoday2MicrosoftSDS.Helpers
         }
 
         private PublicationFile SerializeCsv<TRecord, TMap>(
+            string sdsVersion,
             string fileName,
             IEnumerable<TRecord> records)
-            where TMap : ClassMap<TRecord>
+            where TMap : ClassMap<TRecord>, new()
         {
             using MemoryStream stream = new();
             using (StreamWriter writer = new(stream, new UTF8Encoding(false), leaveOpen: true))
             using (CsvWriter csv = new(writer, _configuration))
             {
-                csv.Context.RegisterClassMap<TMap>();
+                TMap map = new();
+                csv.Context.RegisterClassMap(map);
                 csv.WriteHeader<TRecord>();
                 csv.NextRecord();
                 foreach (TRecord record in records)
                 {
+                    ValidateMappedStrings(sdsVersion, fileName, record, map);
                     csv.WriteRecord(record);
                     csv.NextRecord();
                 }
             }
 
             return new PublicationFile(fileName, BinaryData.FromBytes(stream.ToArray()));
+        }
+
+        private static void ValidateMappedStrings<TRecord>(
+            string sdsVersion,
+            string fileName,
+            TRecord record,
+            ClassMap<TRecord> map)
+        {
+            foreach (MemberMap memberMap in map.MemberMaps)
+            {
+                if (memberMap.Data.Type != typeof(string))
+                {
+                    continue;
+                }
+
+                string value = memberMap.Data.Member switch
+                {
+                    PropertyInfo property => property.GetValue(record) as string,
+                    FieldInfo field => field.GetValue(record) as string,
+                    _ => null
+                };
+
+                if (string.IsNullOrEmpty(value) || value.IndexOfAny(['\r', '\n']) < 0)
+                {
+                    continue;
+                }
+
+                string columnName = memberMap.Data.Names.FirstOrDefault()
+                    ?? memberMap.Data.Member.Name;
+                throw new InvalidDataException(
+                    $"SDS {sdsVersion} file '{fileName}' column '{columnName}' contains a prohibited CR or LF character");
+            }
         }
     }
 }

@@ -160,7 +160,8 @@ public sealed class DatasetAggregationTests
             [new ResolvedClass(sourceClass, [teacher], [student])],
             [teacher],
             [student],
-            guardians);
+            guardians,
+            GuardiansExcludedForMissingName: 0);
     }
 
     private static Medewerker Teacher(Guid uuid, string email)

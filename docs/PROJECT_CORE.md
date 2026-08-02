@@ -45,7 +45,7 @@ A **Somtoday institution** is one configured Somtoday instance identified by an 
 
 - No Windows executable or other Windows production deployment is supported.
 - The application is not an HTTP service, interactive UI, durable queue, or continuously running scheduler.
-- The project does not provision Somtoday access or a Microsoft SDS ingestion configuration.
+- The project does not provision Somtoday access, a Microsoft SDS ingestion configuration, a Power Automate flow, an SDS Flow ID, an Entra application registration, or a Power Automate role assignment.
 - The project does not replace operator privacy governance, access reviews, retention policy, or AVG/GDPR assessment.
 - Automatic cleanup of published output is limited to guardian-specific files; renamed, removed, or newly excluded institution/location output is retained.
 
@@ -57,7 +57,7 @@ The following invariants are confirmed intent:
 - V1 and V2.1 use the same population rules. A class requires at least one resolved exportable teacher and one resolved exportable pupil. People without an included class are excluded from all exported files.
 - Normal mode includes only locations with at least one exportable class. A publication scope with no included location is skipped with a warning and without changing existing output. Header-only mode still produces valid header-only files for every selected scope.
 - Each mandatory SDS-version dataset is a separate, failure-isolated publication unit. Its complete file set is generated and staged before live output is overwritten.
-- Publication uploads each complete in-memory dataset once to staging and then uses one promotion attempt plus three complete-set retries with the Azure Blob SDK's default retry and timeout behavior. After exhausted promotion, it restores the newest older complete application-authored set from Blob versions; absence or failure of that rollback stops the whole application.
+- Publication uploads each complete in-memory dataset once to `{Output:Folder}/.staging/{RunId}/{FileName}` and then uses one promotion attempt plus three complete-set retries with the Azure Blob SDK's default retry and timeout behavior. Staging belongs only to the current run and dataset and is never a later-run or rollback source. After exhausted promotion, publication restores the newest older complete application-authored set from live base Blobs and Blob versions; absence or failure of that rollback stops the whole application.
 - Institution and location output grouping is controlled independently; the default is separation by institution but not by location.
 - School-year boundaries and the automatic July 31 header-only trigger use `Europe/Amsterdam`, including CET/CEST.
 - Guardian output follows the confirmed consent, name, email, phone, and secret-number rules in the export contract.

@@ -107,14 +107,57 @@ jobs:
           az bicep build-params --file infra/main.example.bicepparam --outfile "${{ runner.temp }}/main.parameters.json"
 
           jq -e '
-            any(.resources[]; .type == "Microsoft.Storage/storageAccounts/blobServices"
+            .variables.slashNormalizedOutputFolder
+              == "[replace(trim(parameters(\u0027outputFolder\u0027)), \u0027\\\u0027, \u0027/\u0027)]"
+            and .variables.normalizedOutputFolderSegments
+              == "[map(filter(split(variables(\u0027slashNormalizedOutputFolder\u0027), \u0027/\u0027), lambda(\u0027segment\u0027, not(empty(trim(lambdaVariables(\u0027segment\u0027)))))), lambda(\u0027segment\u0027, trim(lambdaVariables(\u0027segment\u0027))))]"
+            and .variables.normalizedOutputFolder
+              == "[if(and(and(not(empty(variables(\u0027normalizedOutputFolderSegments\u0027))), not(contains(variables(\u0027normalizedOutputFolderSegments\u0027), \u0027.\u0027))), not(contains(variables(\u0027normalizedOutputFolderSegments\u0027), \u0027..\u0027))), join(variables(\u0027normalizedOutputFolderSegments\u0027), \u0027/\u0027), fail(\u0027outputFolder must contain at least one segment and may not contain . or .. segments.\u0027))]"
+            and any(.resources[]; .type == "Microsoft.App/jobs"
+              and (.properties.template.containers[]?.env
+                | contains("Output__Folder")
+                and contains("normalizedOutputFolder")))
+            and any(.resources[]; .type == "Microsoft.Storage/storageAccounts"
+              and .kind == "StorageV2"
+              and .properties.allowSharedKeyAccess == false
+              and (.properties | has("isHnsEnabled") | not)
+              and (.properties | has("isSftpEnabled") | not)
+              and (.properties | has("networkAcls") | not))
+            and any(.resources[]; .type == "Microsoft.Storage/storageAccounts/blobServices"
               and .properties.isVersioningEnabled == true
               and .properties.deleteRetentionPolicy.enabled == true
               and .properties.deleteRetentionPolicy.days == 7)
+            and any(.resources[]; .type == "Microsoft.Storage/storageAccounts/blobServices/containers"
+              and .properties.publicAccess == "None")
             and any(.resources[]; .type == "Microsoft.Storage/storageAccounts/managementPolicies"
+              and (.properties.policy.rules | length == 2)
+              and all(.properties.policy.rules[];
+                (.definition.filters | has("blobIndexMatch") | not))
               and any(.properties.policy.rules[];
                 .enabled == true
-                and .definition.actions.version.delete.daysAfterCreationGreaterThan == 7))
+                and .name == "delete-staging-after-one-day"
+                and .type == "Lifecycle"
+                and .definition.actions.baseBlob.delete.daysAfterModificationGreaterThan == 1
+                and .definition.actions.version.delete.daysAfterCreationGreaterThan == 1
+                and .definition.filters.blobTypes == ["blockBlob"]
+                and (.definition.filters.prefixMatch | length == 1)
+                and .definition.filters.prefixMatch[0]
+                  == "[format(\u0027{0}/{1}/.staging/\u0027, parameters(\u0027blobContainerName\u0027), variables(\u0027normalizedOutputFolder\u0027))]"
+                and (.definition.filters | has("blobIndexMatch") | not))
+              and any(.properties.policy.rules[];
+                .enabled == true
+                and .name == "delete-previous-blob-versions-after-seven-days"
+                and .type == "Lifecycle"
+                and .definition.actions.version.delete.daysAfterCreationGreaterThan == 7
+                and .definition.filters.blobTypes == ["blockBlob"]
+                and .definition.filters.prefixMatch
+                  == ["[format(\u0027{0}/\u0027, parameters(\u0027blobContainerName\u0027))]"]
+                and (.definition.filters | has("blobIndexMatch") | not)))
+            and .variables.storageBlobDataContributorRoleId
+              == "[subscriptionResourceId(\u0027Microsoft.Authorization/roleDefinitions\u0027, \u0027ba92f5b4-2d11-453d-a403-e96b0029c9fe\u0027)]"
+            and any(.resources[]; .type == "Microsoft.Authorization/roleAssignments"
+              and (.scope | contains("Microsoft.Storage/storageAccounts/blobServices/containers"))
+              and (.properties.roleDefinitionId | contains("storageBlobDataContributorRoleId")))
           ' "${{ runner.temp }}/main.json"
 
           jq --sort-keys 'del(.metadata._generator)' "${{ runner.temp }}/main.json" > "${{ runner.temp }}/main.canonical.json"

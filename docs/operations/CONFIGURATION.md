@@ -4,7 +4,7 @@ This operator-facing guide describes configuration and current expression syntax
 
 ## Current configuration sources and settings
 
-.NET configuration is loaded from `appsettings.json`, the environment-specific file, .NET User Secrets in Development, and environment variables. Later providers override earlier providers. Environment variables use `__` between sections, for example `Somtoday__ClientId`.
+.NET configuration is loaded from `appsettings.json`, the environment-specific file, .NET User Secrets in Development, and environment variables. Later providers override earlier providers. Environment variables use `__` between sections, for example `Somtoday__ClientId`. Command-line values are deliberately not added as a configuration provider.
 
 | Setting | Production | Development |
 |---|---|---|
@@ -32,6 +32,8 @@ Full environment names are preferred for operator clarity. The parser intentiona
 
 Somtoday institution authentication gets at most four total attempts. Network and HTTP timeout failures, HTTP 408, HTTP 429, and HTTP 5xx responses are retried after a cancellable two-second wait. Other HTTP 4xx responses and invalid token payloads fail immediately. Authentication bodies, access tokens, client secrets, and raw exception messages are not logged.
 
+The only supported command-line argument is the exact `--empty-csv` switch, matched case-insensitively; one or more occurrences enable header-only mode. All other arguments, including command-line-shaped configuration overrides and `--empty-csv=true`, are ignored without being logged. Use the configuration sources above for every setting.
+
 ## Output layout
 
 | Setting | Default |
@@ -40,6 +42,8 @@ Somtoday institution authentication gets at most four total attempts. Network an
 | `Output__SeparateByLocation` | `false` |
 
 Their output effects are defined only in the [publication contract](../contracts/PUBLICATION.md#output-grouping).
+
+The first live path segment relative to `Output__Folder` cannot equal `.staging` in any casing. It is reserved for temporary application data at `{Output__Folder}/.staging/{RunId}/{FileName}`; it is not a V1- or V2.1-specific folder.
 
 There is no configuration or command-line option to enable, disable, or select an SDS version. Every planned scope always attempts both V1 and V2.1 from the same included population; version-specific publication units exist only to isolate failures.
 
@@ -65,6 +69,8 @@ Location codes are matched case-insensitively. With no inclusion list, every ava
 
 Teacher and pupil expressions are configured independently. A bare property becomes a user expression automatically: for example, `Emailadres` becomes `{user.Emailadres}`. Other direct values include teacher `Medewerkernummer` and pupil `Leerlingnummer`. A value already beginning with `{user.` and ending with `}` may contain multiple property expressions, literal separators, or supported Dynamic LINQ operations.
 
+Treat these expressions as trusted administrator code, not as a sandbox for untrusted input. The parser's existing null and error behavior remains unchanged. All public properties on the generated teacher and pupil models remain technically reachable, but policy prohibits using BSN/ECK identifiers, phone numbers, dates, nested objects, or other sensitive or unsuitable values as a username or part of one.
+
 For a user with `Voorletters = J`, `Achternaam = Jansen`, `Gebruikersnaam = jjansen`, and `Emailadres = J.Jansen@School.nl`:
 
 | Configured value | Result |
@@ -75,7 +81,7 @@ For a user with `Voorletters = J`, `Achternaam = Jansen`, `Gebruikersnaam = jjan
 | `{user.Emailadres.ToLower()}` | `j.jansen@school.nl` |
 | `{user.Voorletters + "." + user.Achternaam + "@school.nl"}` | `J.Jansen@school.nl` |
 
-Use only properties appropriate for the account type. Generated Somtoday models also expose identifiers and personal data that must not be used as usernames. Validate both formats with representative users before production.
+Use only properties appropriate for the account type. Validate both formats with synthetic or appropriately governed representative users before production. The export is matching-only, so configure Microsoft SDS not to create unmatched teacher or pupil accounts.
 
 ## Key Vault bootstrap and rotation
 

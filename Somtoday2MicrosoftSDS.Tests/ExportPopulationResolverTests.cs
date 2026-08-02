@@ -22,6 +22,11 @@ public class ExportPopulationResolverTests
         OuderVerzorger orphanGuardian = CreateGuardian(excludedStudentId);
         OuderVerzorger guardianWithoutConsent = CreateGuardian(studentId);
         guardianWithoutConsent.WenstContactViaEMail = false;
+        guardianWithoutConsent.Voorletters = "   ";
+        OuderVerzorger relevantGuardianWithoutName = CreateGuardian(studentId);
+        relevantGuardianWithoutName.Achternaam = "   ";
+        OuderVerzorger orphanGuardianWithoutName = CreateGuardian(excludedStudentId);
+        orphanGuardianWithoutName.Voorletters = "   ";
 
         VestigingModel model = CreateModel(
             classes:
@@ -44,7 +49,14 @@ public class ExportPopulationResolverTests
                 new Leerling { Uuid = studentId, Emailadres = string.Empty },
                 new Leerling { Uuid = excludedStudentId, Emailadres = "excluded-student@example.test" }
             ],
-            guardians: [includedGuardian, orphanGuardian, guardianWithoutConsent]);
+            guardians:
+            [
+                includedGuardian,
+                orphanGuardian,
+                guardianWithoutConsent,
+                relevantGuardianWithoutName,
+                orphanGuardianWithoutName
+            ]);
 
         ResolvedExportPopulation population = ExportPopulationResolver.Resolve(model);
 
@@ -58,14 +70,25 @@ public class ExportPopulationResolverTests
         ResolvedGuardian resolvedGuardian = Assert.Single(population.Guardians);
         Assert.Equal(includedGuardian.Uuid, resolvedGuardian.Source.Uuid);
         Assert.Equal(studentId, Assert.Single(resolvedGuardian.StudentIds));
+        Assert.Equal(1, population.GuardiansExcludedForMissingName);
 
         SDScsvV1 v1 = new SDScsvHelperV1(population, RunDate).ConvertToSDSCSV();
         SDScsvV2 v2 = new SDScsvHelperV2(population, RunDate).ConvertToSDSCSV();
         Assert.Single(v1.Guardianrelationship, relationship => relationship.SISid == studentId.ToString());
         Assert.DoesNotContain(v1.User, guardian => guardian.SISid == orphanGuardian.Uuid.ToString());
+        Assert.DoesNotContain(v1.User, guardian =>
+            guardian.SISid == relevantGuardianWithoutName.Uuid.ToString());
+        Assert.DoesNotContain(v1.Guardianrelationship, relationship =>
+            relationship.Email == relevantGuardianWithoutName.Emailadres);
         Assert.Single(v2.Relationships, relationship => relationship.userSourcedId == studentId.ToString());
         Assert.DoesNotContain(v2.Users, user => user.sourcedId == orphanGuardian.Uuid.ToString());
         Assert.DoesNotContain(v2.Roles, role => role.userSourcedId == orphanGuardian.Uuid.ToString());
+        Assert.DoesNotContain(v2.Users, user =>
+            user.sourcedId == relevantGuardianWithoutName.Uuid.ToString());
+        Assert.DoesNotContain(v2.Roles, role =>
+            role.userSourcedId == relevantGuardianWithoutName.Uuid.ToString());
+        Assert.DoesNotContain(v2.Relationships, relationship =>
+            relationship.relationshipUserSourcedId == relevantGuardianWithoutName.Uuid.ToString());
     }
 
     [Fact]
@@ -140,10 +163,46 @@ public class ExportPopulationResolverTests
         Assert.Empty(population.Teachers);
         Assert.Empty(population.Students);
         Assert.Empty(population.Guardians);
+        Assert.Equal(0, population.GuardiansExcludedForMissingName);
         Assert.False(Program.ShouldPublishLocation(population, "Test school", logger));
         Assert.Contains(logger.Messages, message =>
             message.Contains("Excluding Test school/Test location", StringComparison.Ordinal)
             && message.Contains("from planned datasets", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MissingGuardianNameDiagnosticLogsOnlyTheCountOncePerPopulation()
+    {
+        Guid teacherId = Guid.NewGuid();
+        Guid studentId = Guid.NewGuid();
+        OuderVerzorger guardian = CreateGuardian(studentId);
+        guardian.Voorletters = " ";
+        guardian.Emailadres = "guardian-private@example.test";
+        ResolvedExportPopulation population = ExportPopulationResolver.Resolve(CreateModel(
+            classes: [CreateClass("Class", [teacherId], [studentId])],
+            teachers: [new Medewerker { Uuid = teacherId }],
+            students: [new Leerling { Uuid = studentId }],
+            guardians: [guardian]));
+        CapturingProgramLogger logger = new();
+
+        Program.LogGuardianNameExclusions(population, logger);
+
+        string message = Assert.Single(logger.Messages);
+        Assert.Contains("Excluded 1 otherwise eligible guardian records", message, StringComparison.Ordinal);
+        Assert.DoesNotContain(guardian.Uuid.ToString(), message, StringComparison.Ordinal);
+        Assert.DoesNotContain(guardian.Emailadres, message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Test location", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GuardianNameDiagnosticDoesNotLogWhenCountIsZero()
+    {
+        ResolvedExportPopulation population = ExportPopulationResolver.Resolve(CreateModel([], [], []));
+        CapturingProgramLogger logger = new();
+
+        Program.LogGuardianNameExclusions(population, logger);
+
+        Assert.Empty(logger.Messages);
     }
 
     private static VestigingModel CreateModel(

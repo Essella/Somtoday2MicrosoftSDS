@@ -1,6 +1,7 @@
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.UserSecrets;
+using Microsoft.Extensions.Hosting;
 using Somtoday2MicrosoftSDS.Helpers;
 using Xunit;
 
@@ -421,6 +422,33 @@ public class CoreBehaviorTests
     {
         string[] args = string.IsNullOrEmpty(argument) ? [] : [argument];
         Assert.Equal(expected, Program.ShouldGenerateEmptyCsv(args, false, new DateOnly(2026, month, day)));
+    }
+
+    [Fact]
+    public void EmptyCsvArgumentIsExactCaseInsensitiveAndAllowsDuplicates()
+    {
+        DateOnly ordinaryDay = new(2026, 1, 1);
+
+        Assert.True(Program.ShouldGenerateEmptyCsv(
+            ["--ignored", "--EMPTY-CSV", "--empty-csv"],
+            configuredGenerateEmptyCsv: false,
+            ordinaryDay));
+        Assert.False(Program.ShouldGenerateEmptyCsv(
+            ["--empty-csv=true", "--Output:Folder=override", "unrelated"],
+            configuredGenerateEmptyCsv: false,
+            ordinaryDay));
+    }
+
+    [Fact]
+    public void HostConfigurationDoesNotRegisterACommandLineProvider()
+    {
+        HostApplicationBuilder builder = Program.CreateHostApplicationBuilder();
+
+        Assert.DoesNotContain(
+            builder.Configuration.Sources,
+            source => source.GetType().FullName?.Contains(
+                "CommandLine",
+                StringComparison.OrdinalIgnoreCase) == true);
     }
 
     [Fact]

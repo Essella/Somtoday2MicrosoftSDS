@@ -7,6 +7,7 @@ namespace Somtoday2MicrosoftSDS.Tests;
 
 public sealed class DatasetPublisherTests
 {
+    private const string OutputPrefix = "output";
     private const string RunId = "0198d4e8fe8c70008000000000000001";
     private static readonly DateTimeOffset RunUtc = new(2026, 8, 1, 10, 30, 0, TimeSpan.Zero);
 
@@ -24,14 +25,25 @@ public sealed class DatasetPublisherTests
 
         Assert.Equal(DatasetPublicationResult.Succeeded, result);
         Assert.Equal(0, store.GetVersionsCalls);
-        Assert.Contains($"upload:output/v2/.staging/{RunId}/orgs.csv", store.Operations);
+        Assert.Contains($"upload:{OutputPrefix}/.staging/{RunId}/orgs.csv", store.Operations);
         int firstCopy = store.Operations.FindIndex(operation => operation.StartsWith("copy:", StringComparison.Ordinal));
         Assert.Equal(dataset.Files.Count, store.Operations.Take(firstCopy).Count(
             operation => operation.StartsWith("upload:", StringComparison.Ordinal)));
 
+        Assert.All(store.Uploads, upload =>
+        {
+            Assert.StartsWith($"{OutputPrefix}/.staging/{RunId}/", upload.Name, StringComparison.Ordinal);
+            Assert.Equal(4, upload.Metadata.Count);
+            Assert.Equal(DatasetPublisher.ProducerMetadataValue, upload.Metadata[DatasetPublisher.ProducerMetadataKey]);
+            Assert.Equal(RunUtc.ToString("O"), upload.Metadata[DatasetPublisher.RunUtcMetadataKey]);
+            Assert.Equal("v2", upload.Metadata[DatasetPublisher.SdsVersionMetadataKey]);
+            Assert.Equal("true", upload.Metadata[DatasetPublisher.GuardiansMetadataKey]);
+        });
+
         foreach (PublicationFile file in dataset.Files)
         {
             VersionAwareBlobStore.StoredBlob live = store.Current["output/v2/" + file.Name];
+            Assert.Equal(4, live.Metadata.Count);
             Assert.Equal(DatasetPublisher.ProducerMetadataValue, live.Metadata[DatasetPublisher.ProducerMetadataKey]);
             Assert.Equal(RunUtc.ToString("O"), live.Metadata[DatasetPublisher.RunUtcMetadataKey]);
             Assert.Equal("v2", live.Metadata[DatasetPublisher.SdsVersionMetadataKey]);
@@ -39,6 +51,53 @@ public sealed class DatasetPublisherTests
         }
 
         Assert.DoesNotContain(store.Current.Keys, name => name.Contains("/.staging/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ReusedStagingNameIsOverwrittenBeforePromotingTheNextSequentialScope()
+    {
+        bool failCleanup = true;
+        VersionAwareBlobStore store = new()
+        {
+            ShouldFailDelete = (_, name) =>
+                failCleanup && name.Contains("/.staging/", StringComparison.Ordinal)
+        };
+        DatasetPublisher publisher = CreatePublisher(store);
+        PublicationDataset firstDataset = CreateCompleteV2Dataset("first scope");
+        PublicationDataset secondDataset = CreateCompleteV2Dataset("second scope");
+
+        DatasetPublicationResult firstResult = await publisher.PublishAsync(
+            firstDataset,
+            "output/FIRST/v2",
+            CancellationToken.None);
+
+        Assert.Equal(DatasetPublicationResult.Succeeded, firstResult);
+        Assert.All(firstDataset.Files, file => Assert.Equal(
+            $"first scope:{file.Name}",
+            store.Current[$"{OutputPrefix}/.staging/{RunId}/{file.Name}"].Content.ToString()));
+
+        failCleanup = false;
+        DatasetPublicationResult secondResult = await publisher.PublishAsync(
+            secondDataset,
+            "output/SECOND/v2",
+            CancellationToken.None);
+
+        Assert.Equal(DatasetPublicationResult.Succeeded, secondResult);
+        Assert.All(secondDataset.Files, file =>
+        {
+            string stagingName = $"{OutputPrefix}/.staging/{RunId}/{file.Name}";
+            Assert.Equal(
+                $"first scope:{file.Name}",
+                store.Current[$"output/FIRST/v2/{file.Name}"].Content.ToString());
+            Assert.Equal(
+                $"second scope:{file.Name}",
+                store.Current[$"output/SECOND/v2/{file.Name}"].Content.ToString());
+            Assert.Equal(2, store.Operations.Count(operation => operation == "upload:" + stagingName));
+            Assert.True(
+                store.Operations.LastIndexOf("upload:" + stagingName) <
+                store.Operations.IndexOf($"copy:output/SECOND/v2/{file.Name}"));
+            Assert.DoesNotContain(stagingName, store.Current.Keys);
+        });
     }
 
     [Fact]
@@ -252,6 +311,35 @@ public sealed class DatasetPublisherTests
     }
 
     [Fact]
+    public async Task RollbackNeverUsesCompleteLegacyStagingAsARestoreSource()
+    {
+        VersionAwareBlobStore store = new()
+        {
+            ShouldFailCopy = (_, destination) => destination.EndsWith("orgs.csv", StringComparison.Ordinal)
+        };
+        PublicationDataset dataset = CreateV2Dataset(guardians: false);
+        DateTimeOffset restoreRun = RunUtc.AddHours(-1);
+
+        foreach (string fileName in dataset.CoreFileNames)
+        {
+            store.AddVersion(
+                $"output/v2/.staging/{RunId}/{fileName}",
+                "staged-" + fileName,
+                Metadata(restoreRun, "v2", guardians: false),
+                restoreRun,
+                "staged content");
+        }
+
+        await Assert.ThrowsAsync<PublicationRollbackException>(() => CreatePublisher(store).PublishAsync(
+            dataset,
+            "output/v2",
+            CancellationToken.None));
+
+        Assert.Equal(1, store.GetVersionsCalls);
+        Assert.Empty(store.RestoreAttempts);
+    }
+
+    [Fact]
     public async Task RollbackAttemptsRemainingFilesBeforeReportingFatalFailure()
     {
         VersionAwareBlobStore store = new()
@@ -330,29 +418,37 @@ public sealed class DatasetPublisherTests
     }
 
     [Fact]
-    public async Task StartupCleanupDeletesOnlyOwnedStagingBlobs()
+    public async Task StartupCleanupRecognizesNewAndLegacyOwnedStagingBlobsOnly()
     {
         VersionAwareBlobStore store = new();
         store.AddCurrent(
-            $"output/v2/.staging/{RunId}/orgs.csv",
-            "owned",
+            $"{OutputPrefix}/.staging/{RunId}/orgs.csv",
+            "owned new layout",
             Metadata(RunUtc.AddDays(-1), "v2", false));
         store.AddCurrent(
-            "output/v2/.staging/orgs.csv",
+            $"output/v2/.staging/{RunId}/orgs.csv",
+            "owned legacy layout",
+            Metadata(RunUtc.AddDays(-1), "v2", false));
+        store.AddCurrent(
+            "output/.staging/orgs.csv",
             "missing run id",
             Metadata(RunUtc.AddDays(-1), "v2", false));
         store.AddCurrent(
-            "output/v2/.staging/0198d4e8fe8c40008000000000000001/orgs.csv",
+            "output/.staging/0198d4e8fe8c40008000000000000001/orgs.csv",
             "uuid v4",
             Metadata(RunUtc.AddDays(-1), "v2", false));
         store.AddCurrent(
-            $"output/v2/.staging/{RunId}/nested/orgs.csv",
+            $"output/.staging/{RunId}/nested/orgs.csv",
             "extra segment",
             Metadata(RunUtc.AddDays(-1), "v2", false));
         store.AddCurrent(
-            $"output/v2/.staging/{RunId}/users.csv",
+            $"output/.staging/{RunId}/users.csv",
             "missing producer metadata",
             new Dictionary<string, string>());
+        store.AddCurrent(
+            $"output/.STAGING/{RunId}/classes.csv",
+            "wrong staging case",
+            Metadata(RunUtc.AddDays(-1), "v2", false));
         store.AddCurrent(
             "archive/.staging/output/v2/orgs.csv",
             "live output folder",
@@ -372,11 +468,13 @@ public sealed class DatasetPublisherTests
 
         await CreatePublisher(store).CleanupStaleStagingAsync(CancellationToken.None);
 
+        Assert.DoesNotContain($"{OutputPrefix}/.staging/{RunId}/orgs.csv", store.Current.Keys);
         Assert.DoesNotContain($"output/v2/.staging/{RunId}/orgs.csv", store.Current.Keys);
-        Assert.Contains("output/v2/.staging/orgs.csv", store.Current.Keys);
-        Assert.Contains("output/v2/.staging/0198d4e8fe8c40008000000000000001/orgs.csv", store.Current.Keys);
-        Assert.Contains($"output/v2/.staging/{RunId}/nested/orgs.csv", store.Current.Keys);
-        Assert.Contains($"output/v2/.staging/{RunId}/users.csv", store.Current.Keys);
+        Assert.Contains("output/.staging/orgs.csv", store.Current.Keys);
+        Assert.Contains("output/.staging/0198d4e8fe8c40008000000000000001/orgs.csv", store.Current.Keys);
+        Assert.Contains($"output/.staging/{RunId}/nested/orgs.csv", store.Current.Keys);
+        Assert.Contains($"output/.staging/{RunId}/users.csv", store.Current.Keys);
+        Assert.Contains($"output/.STAGING/{RunId}/classes.csv", store.Current.Keys);
         Assert.Contains("archive/.staging/output/v2/orgs.csv", store.Current.Keys);
         Assert.Contains("output/.staging/v2/orgs.csv", store.Current.Keys);
         Assert.Contains("output/school/.staging/v2/orgs.csv", store.Current.Keys);
@@ -391,14 +489,14 @@ public sealed class DatasetPublisherTests
             StaleCleanupFailuresRemaining = 2
         };
         store.AddCurrent(
-            $"output/v2/.staging/{RunId}/orgs.csv",
+            $"{OutputPrefix}/.staging/{RunId}/orgs.csv",
             "owned",
             Metadata(RunUtc.AddDays(-1), "v2", false));
 
         await CreatePublisher(store).CleanupStaleStagingAsync(CancellationToken.None);
 
         Assert.Equal(3, store.StaleCleanupAttempts);
-        Assert.DoesNotContain($"output/v2/.staging/{RunId}/orgs.csv", store.Current.Keys);
+        Assert.DoesNotContain($"{OutputPrefix}/.staging/{RunId}/orgs.csv", store.Current.Keys);
     }
 
     [Fact]
@@ -410,7 +508,7 @@ public sealed class DatasetPublisherTests
             StaleCleanupFailuresRemaining = 4
         };
 
-        await new DatasetPublisher(store, logger, RunUtc, RunId)
+        await new DatasetPublisher(store, logger, OutputPrefix, RunUtc, RunId)
             .CleanupStaleStagingAsync(CancellationToken.None);
 
         Assert.Equal(4, store.StaleCleanupAttempts);
@@ -443,7 +541,7 @@ public sealed class DatasetPublisherTests
         Assert.Equal(DatasetPublicationResult.Succeeded, result);
         Assert.All(
             dataset.Files,
-            file => Assert.Equal(2, attemptsByName[$"output/v2/.staging/{RunId}/{file.Name}"]));
+            file => Assert.Equal(2, attemptsByName[$"{OutputPrefix}/.staging/{RunId}/{file.Name}"]));
         Assert.DoesNotContain(store.Current.Keys, name => name.Contains("/.staging/", StringComparison.Ordinal));
     }
 
@@ -457,12 +555,12 @@ public sealed class DatasetPublisherTests
         };
         PublicationDataset dataset = CreateV2Dataset(guardians: true);
 
-        DatasetPublicationResult result = await new DatasetPublisher(store, logger, RunUtc, RunId)
+        DatasetPublicationResult result = await new DatasetPublisher(store, logger, OutputPrefix, RunUtc, RunId)
             .PublishAsync(dataset, "output/v2", CancellationToken.None);
 
         Assert.Equal(DatasetPublicationResult.Succeeded, result);
         Assert.Contains("output/v2/orgs.csv", store.Current.Keys);
-        Assert.Contains($"output/v2/.staging/{RunId}/orgs.csv", store.Current.Keys);
+        Assert.Contains($"{OutputPrefix}/.staging/{RunId}/orgs.csv", store.Current.Keys);
         Assert.Equal(4, store.DeleteAttempts.Count(name => name.EndsWith("orgs.csv", StringComparison.Ordinal)));
         Assert.Contains(
             logger.Entries,
@@ -481,7 +579,7 @@ public sealed class DatasetPublisherTests
         };
 
         PublicationRollbackException exception = await Assert.ThrowsAsync<PublicationRollbackException>(() =>
-            new DatasetPublisher(store, logger, RunUtc, RunId).PublishAsync(
+            new DatasetPublisher(store, logger, OutputPrefix, RunUtc, RunId).PublishAsync(
                 CreateV2Dataset(false),
                 "output/v2",
                 CancellationToken.None));
@@ -533,6 +631,7 @@ public sealed class DatasetPublisherTests
         await Assert.ThrowsAsync<PublicationRollbackException>(() => new DatasetPublisher(
             store,
             logger,
+            OutputPrefix,
             RunUtc,
             RunId).PublishAsync(
                 CreateV2Dataset(false),
@@ -544,12 +643,25 @@ public sealed class DatasetPublisherTests
 
     private static DatasetPublisher CreatePublisher(VersionAwareBlobStore store)
     {
-        return new DatasetPublisher(store, new CollectingLogger(), RunUtc, RunId);
+        return new DatasetPublisher(store, new CollectingLogger(), OutputPrefix, RunUtc, RunId);
     }
 
     private static PublicationDataset CreateV2Dataset(bool guardians)
     {
         return new FileHelper().CreateEmptyV2Dataset(guardians);
+    }
+
+    private static PublicationDataset CreateCompleteV2Dataset(string scope)
+    {
+        string[] fileNames = ["orgs.csv", "users.csv", "roles.csv", "classes.csv", "enrollments.csv"];
+        return new PublicationDataset(
+            "v2",
+            guardianEnabled: false,
+            fileNames.Select(fileName => new PublicationFile(
+                fileName,
+                BinaryData.FromString($"{scope}:{fileName}"))).ToArray(),
+            fileNames,
+            []);
     }
 
     private static IReadOnlyDictionary<string, string> Metadata(
@@ -580,6 +692,8 @@ public sealed class DatasetPublisherTests
         internal Dictionary<string, StoredBlob> Current { get; } = new(StringComparer.Ordinal);
 
         internal List<string> Operations { get; } = [];
+
+        internal List<(string Name, IReadOnlyDictionary<string, string> Metadata)> Uploads { get; } = [];
 
         internal List<string> CopyAttempts { get; } = [];
 
@@ -619,6 +733,9 @@ public sealed class DatasetPublisherTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Operations.Add("upload:" + blobName);
+            Uploads.Add((
+                blobName,
+                new Dictionary<string, string>(metadata, StringComparer.OrdinalIgnoreCase)));
             WriteCurrent(blobName, content, metadata);
             return Task.CompletedTask;
         }

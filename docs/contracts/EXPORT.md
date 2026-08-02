@@ -9,6 +9,33 @@ This document defines confirmed intended SDS transformation behavior. External S
 - Normal mode includes a location only when its resolved population contains at least one exportable class. In a grouped dataset, other included locations are still published; the publication unit is skipped only when no location remains. A skip logs a warning, is not a run failure, and leaves existing output unchanged.
 - Header-only mode emits all required files with headers and no data rows. It is enabled by `Output:GenerateEmptyCsv`, `--empty-csv`, or automatically on July 31 in `Europe/Amsterdam` time.
 
+## CSV wire contract
+
+Every file is comma-delimited UTF-8 without a byte-order mark. File names and headers are case-sensitive and remain exactly as follows:
+
+| SDS format | File | Headers in order |
+|---|---|---|
+| V1 | `School.csv` | `SIS ID`, `Name` |
+| V1 | `Section.csv` | `SIS ID`, `School SIS ID`, `Section Name`, `Section Number`, `Course Name`, `Course Description` |
+| V1 | `Teacher.csv` | `SIS ID`, `School SIS ID`, `Username` |
+| V1 | `Student.csv` | `SIS ID`, `School SIS ID`, `Username` |
+| V1 | `TeacherRoster.csv` | `Section SIS ID`, `SIS ID` |
+| V1 | `StudentEnrollment.csv` | `Section SIS ID`, `SIS ID` |
+| V1 guardian | `User.csv` | `Email`, `First Name`, `Last Name`, `Phone`, `SIS ID` |
+| V1 guardian | `Guardianrelationship.csv` | `SIS ID`, `Email`, `Role` |
+| V2.1 | `orgs.csv` | `sourcedId`, `name`, `type`, `parentSourcedId` |
+| V2.1 | `users.csv` | `sourcedId`, `username`, `givenName`, `familyName`, `password`, `activeDirectoryMatchId`, `email`, `phone`, `sms` |
+| V2.1 | `roles.csv` | `userSourcedId`, `orgSourcedId`, `role` |
+| V2.1 | `classes.csv` | `sourcedId`, `orgSourcedId`, `title`, `sessionSourcedIds`, `courseSourcedId` |
+| V2.1 | `enrollments.csv` | `classSourcedId`, `userSourcedId`, `role` |
+| V2.1 guardian | `relationships.csv` | `userSourcedId`, `relationshipUserSourcedId`, `relationshipRole` |
+
+The established role values are V1 guardian `guardian`; V2.1 organization roles `staff`, `student`, and guardian `other`; V2.1 enrollment roles `teacher` and `student`; and V2.1 contact relationship role `guardian`.
+
+Before a row is serialized, every string field mapped by that file's active CSV map is checked for carriage-return or line-feed characters. A violation fails dataset construction with an `InvalidDataException` that identifies only the SDS version, exact file name, and exact column header; it never includes the field value or a person identifier. Header-only files and unmapped properties add no such validation failure. Because complete dataset construction precedes staging inside each version boundary, a violation causes zero staging uploads for that version, leaves its live output unchanged, and does not suppress another version or later scope.
+
+Teacher and pupil output is matching-only. V1 deliberately has no name columns in `Teacher.csv` or `Student.csv`; V2.1 leaves their `givenName` and `familyName` values empty. Configure SDS not to create unmatched users. Guardian names remain populated as specified below.
+
 ## Class and person population
 
 A class is exportable only when its name is not null, empty, or whitespace and at least one teacher and one pupil remain after reference resolution. Resolve `Lesgroep.Docenten` and `Lesgroep.Leerlingen` UUIDs against the employees and pupils downloaded for the same location. Treat missing reference collections as empty and ignore UUIDs that do not resolve. Teacher-only classes, pupil-only classes, and effectively empty classes are excluded.
@@ -41,20 +68,24 @@ Operational syntax and examples are in the [configuration guide](../operations/C
 
 ## Guardian inclusion and mapping
 
-Guardian sync is optional. A guardian is exportable only when `WenstContactViaEMail` is `true`, the required email value is available, and at least one relationship to an included pupil remains. Relationships to excluded pupils are omitted. When `WenstContactViaEMail` is `false`, omit the guardian from every user and role file and remove every relationship or other reference to that guardian from all exported files.
+Guardian sync is optional. Evaluate contact eligibility, relevant pupil relationships, and name eligibility separately. A guardian is exportable only when `WenstContactViaEMail` is `true`, the required email is not null, empty, or whitespace, at least one relationship to an included pupil remains, and both trimmed `Voorletters` and trimmed `Achternaam` are non-empty. Relationships to excluded pupils are omitted. A rejected guardian is omitted consistently from V1 `User.csv` and `Guardianrelationship.csv` and V2.1 `users.csv`, `roles.csv`, and `relationships.csv`.
 
 The mapping is:
 
 | SDS value | Somtoday source |
 |---|---|
-| V1 `First Name`; V2.1 `givenName` | `OuderVerzorger.Voorletters` |
-| V1 `Last Name`; V2.1 `familyName` | Non-empty `Voorvoegsel` and `Achternaam`, joined with one space |
+| V1 `First Name`; V2.1 `givenName` | `OuderVerzorger.Voorletters.Trim()` |
+| V1 `Last Name`; V2.1 `familyName` | Optional trimmed `Voorvoegsel` plus required trimmed `Achternaam`, joined with exactly one space |
 | V1 `Email`; V2.1 `email` and `username` | `Emailadres` |
 | Phone | Selected phone value normalized to E.164 |
 
 Determine the source of fallback `OuderVerzorger.Telefoonnummer` by comparing it with the explicit home, mobile, and work values, then apply the corresponding secret-number flag. Secret numbers are never exported. When multiple permitted values exist, preference is mobile, then home, then work.
 
-A non-empty exported phone value must consist of exactly one leading `+`, followed by 2 through 15 ASCII digits; the first digit must be `1` through `9`. Preserve the existing conversion of Dutch `0...` and international `00...` source values, but emit an empty phone value when the normalized result does not meet this rule. An invalid optional phone does not exclude the guardian or any otherwise valid relationship.
+Phone preprocessing deliberately remains permissive: retain digits and plus signs while removing other characters, add `0` to a prefixless value of exactly nine digits, convert `00...` to `+...`, convert Dutch `0...` to `+31...`, and preserve an already international `+...` value. Do not reject a source merely because it contained letters or formatting characters before this processing. Both a Dutch number with its national trunk prefix and a nine-digit number without trunk or country prefix are treated as Dutch: `0612345678` and `612345678` both become `+31612345678`.
+
+A non-empty exported phone value must ultimately consist of exactly one leading `+`, followed by 2 through 15 ASCII digits; the first digit must be `1` through `9`. Emit an empty phone value when the processed result does not meet this rule. An invalid optional phone does not exclude the guardian or any otherwise valid relationship, and source values are never logged.
+
+The resolved population records, per location, how many guardians passed contact and pupil-relationship eligibility but were excluded only for missing required name fields. Log that count once for the location without logging a name, UUID, email address, or phone number.
 
 When guardian sync is enabled but generates no guardians or relationships, guardian-specific files are still emitted with headers only. Published-file removal when guardian sync is disabled is defined by the [publication contract](PUBLICATION.md).
 
@@ -68,3 +99,5 @@ Somtoday does not indicate whether an adult pupil consented to guardian access. 
 - [Microsoft guardian guidance](https://learn.microsoft.com/en-us/schooldatasync/parents-and-guardians-in-sds) requires names and email for a user referenced by a contact relationship.
 
 The transformer does not retrieve missing entities and does not independently validate the finished dataset against an external SDS service.
+
+For Power Automate transport, one flow reads one complete live V1 or V2.1 dataset and submits it to a Microsoft School Data Sync V2 data-flow ID configured for that same CSV format. Never mix versions, never read `.staging`, and provide the same complete file set used for the data flow's initial SDS upload each time. The word “V2” in the connector name identifies the current SDS experience; it does not restrict that experience to the V2.1 CSV format.

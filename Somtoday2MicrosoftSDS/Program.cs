@@ -35,9 +35,14 @@ namespace Somtoday2MicrosoftSDS
             return Guid.CreateVersion7().ToString("N");
         }
 
+        internal static HostApplicationBuilder CreateHostApplicationBuilder()
+        {
+            return Host.CreateApplicationBuilder();
+        }
+
         private static async Task<int> Main(string[] args)
         {
-            HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+            HostApplicationBuilder builder = CreateHostApplicationBuilder();
             builder.Logging.ClearProviders();
             builder.Logging.AddConsole();
             builder.Logging.SetMinimumLevel(LogLevel.Information);
@@ -101,6 +106,7 @@ namespace Somtoday2MicrosoftSDS
                 DatasetPublisher publisher = new(
                     publicationStore,
                     host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<DatasetPublisher>(),
+                    configuration.OutputPrefix,
                     runStartedUtc,
                     runId);
                 await publisher.CleanupStaleStagingAsync(cancellationToken);
@@ -382,6 +388,7 @@ namespace Somtoday2MicrosoftSDS
                     info.OuderVerzorgers.Count);
 
                 ResolvedExportPopulation population = ExportPopulationResolver.Resolve(info);
+                LogGuardianNameExclusions(population, _logger);
                 if (!ShouldPublishLocation(population, school.SchoolName, _logger))
                 {
                     continue;
@@ -391,6 +398,20 @@ namespace Somtoday2MicrosoftSDS
             }
 
             return populations;
+        }
+
+        internal static void LogGuardianNameExclusions(
+            ResolvedExportPopulation population,
+            ILogger<Program> logger)
+        {
+            if (population.GuardiansExcludedForMissingName == 0)
+            {
+                return;
+            }
+
+            logger.LogWarning(
+                "Excluded {GuardianCount} otherwise eligible guardian records because required name fields are missing",
+                population.GuardiansExcludedForMissingName);
         }
 
         internal static bool ShouldPublishLocation(
@@ -463,6 +484,7 @@ namespace Somtoday2MicrosoftSDS
                         includeGuardianSync),
                     BlobPathHelper.Combine(availableScope.BasePrefix, "v1"),
                     cancellationToken),
+                _logger,
                 cancellationToken);
 
             await PublishVersionAsync(
@@ -476,6 +498,7 @@ namespace Somtoday2MicrosoftSDS
                         includeGuardianSync),
                     BlobPathHelper.Combine(availableScope.BasePrefix, "v2"),
                     cancellationToken),
+                _logger,
                 cancellationToken);
         }
 
@@ -508,6 +531,7 @@ namespace Somtoday2MicrosoftSDS
                     fileHelper.CreateEmptyV1Dataset(configuration.EnableGuardianSync),
                     BlobPathHelper.Combine(availableScope.BasePrefix, "v1"),
                     cancellationToken),
+                _logger,
                 cancellationToken);
 
             await PublishVersionAsync(
@@ -519,15 +543,17 @@ namespace Somtoday2MicrosoftSDS
                     fileHelper.CreateEmptyV2Dataset(configuration.EnableGuardianSync),
                     BlobPathHelper.Combine(availableScope.BasePrefix, "v2"),
                     cancellationToken),
+                _logger,
                 cancellationToken);
         }
 
-        private static async Task PublishVersionAsync(
+        internal static async Task PublishVersionAsync(
             string version,
             string blobPrefix,
             IReadOnlyList<Guid> participantSchoolUuids,
             HashSet<Guid> failedSchools,
             Func<Task<DatasetPublicationResult>> publish,
+            ILogger<Program> logger,
             CancellationToken cancellationToken)
         {
             try
@@ -536,7 +562,7 @@ namespace Somtoday2MicrosoftSDS
                 if (result == DatasetPublicationResult.Failed)
                 {
                     failedSchools.UnionWith(participantSchoolUuids);
-                    _logger.LogError(
+                    logger.LogError(
                         "Publication failed for {SdsVersion} dataset at {BlobPrefix} for Somtoday schools {SchoolUuids}; the previous complete app dataset was restored",
                         version,
                         blobPrefix,
@@ -554,7 +580,7 @@ namespace Somtoday2MicrosoftSDS
             catch (Exception ex)
             {
                 failedSchools.UnionWith(participantSchoolUuids);
-                _logger.LogError(
+                logger.LogError(
                     "Failed to publish {SdsVersion} dataset at {BlobPrefix} for Somtoday schools {SchoolUuids} ({Error})",
                     version,
                     blobPrefix,

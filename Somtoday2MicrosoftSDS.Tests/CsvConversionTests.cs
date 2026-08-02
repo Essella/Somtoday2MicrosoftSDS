@@ -14,21 +14,14 @@ public class CsvConversionTests
         OuderVerzorger guardian = CreateGuardian(
             email: "guardian@example.test",
             wantsEmail: true,
-            initials: "A.B.",
-            prefix: "van",
-            surname: "Test");
+            initials: "  A.B.  ",
+            prefix: "  van  ",
+            surname: "  Test  ");
         guardian.Telefoonnummer = "06 12345678";
         guardian.UitgebreidMobielNummer = "06-12345678";
         guardian.UitgebreidTelefoonnummer = "020 1234567";
 
-        OuderVerzorger guardianWithoutInitials = CreateGuardian(
-            email: "no-initials@example.test",
-            wantsEmail: true,
-            initials: string.Empty,
-            prefix: string.Empty,
-            surname: "NoInitials");
-
-        VestigingModel model = CreateModel(guardian, guardianWithoutInitials);
+        VestigingModel model = CreateModel(guardian);
         ResolvedExportPopulation population = ExportPopulationResolver.Resolve(model);
         SDScsvV1 v1 = new SDScsvHelperV1(population, RunDate).ConvertToSDSCSV();
         SDScsvV2 v2 = new SDScsvHelperV2(population, RunDate).ConvertToSDSCSV();
@@ -45,13 +38,76 @@ public class CsvConversionTests
         Assert.Equal("A.B.", v2Guardian.givenName);
         Assert.Equal("van Test", v2Guardian.familyName);
         Assert.Equal("+31612345678", v2Guardian.phone);
+        Assert.Equal(0, population.GuardiansExcludedForMissingName);
+    }
 
-        Assert.Equal(
-            string.Empty,
-            Assert.Single(v1.User, user => user.SISid == guardianWithoutInitials.Uuid.ToString()).FirstName);
-        Assert.Equal(
-            string.Empty,
-            Assert.Single(v2.Users, user => user.sourcedId == guardianWithoutInitials.Uuid.ToString()).givenName);
+    [Fact]
+    public void MatchingOnlyNamesAndRoleValuesRemainExactInBothWireFormats()
+    {
+        OuderVerzorger guardian = CreateGuardian(
+            "guardian@example.test",
+            wantsEmail: true,
+            initials: "A.",
+            prefix: string.Empty,
+            surname: "Guardian");
+        VestigingModel model = CreateModel(guardian);
+        ResolvedExportPopulation population = ExportPopulationResolver.Resolve(model);
+        SDScsvV1 v1 = new SDScsvHelperV1(population, RunDate).ConvertToSDSCSV();
+        SDScsvV2 v2 = new SDScsvHelperV2(population, RunDate).ConvertToSDSCSV();
+        string teacherId = Assert.Single(model.Medewerkers).Uuid.ToString();
+        string studentId = Assert.Single(model.Leerlingen).Uuid.ToString();
+        string guardianId = guardian.Uuid.ToString();
+
+        Assert.Equal("guardian", Assert.Single(v1.Guardianrelationship).Role);
+
+        Users teacher = Assert.Single(v2.Users, user => user.sourcedId == teacherId);
+        Users student = Assert.Single(v2.Users, user => user.sourcedId == studentId);
+        Assert.True(string.IsNullOrEmpty(teacher.givenName));
+        Assert.True(string.IsNullOrEmpty(teacher.familyName));
+        Assert.True(string.IsNullOrEmpty(student.givenName));
+        Assert.True(string.IsNullOrEmpty(student.familyName));
+
+        Assert.Equal("staff", Assert.Single(v2.Roles, role => role.userSourcedId == teacherId).role);
+        Assert.Equal("student", Assert.Single(v2.Roles, role => role.userSourcedId == studentId).role);
+        Assert.Equal("other", Assert.Single(v2.Roles, role => role.userSourcedId == guardianId).role);
+        Assert.Equal("teacher", Assert.Single(v2.Enrollments, enrollment => enrollment.userSourcedId == teacherId).role);
+        Assert.Equal("student", Assert.Single(v2.Enrollments, enrollment => enrollment.userSourcedId == studentId).role);
+        Assert.Equal("guardian", Assert.Single(v2.Relationships).relationshipRole);
+    }
+
+    [Theory]
+    [InlineData(null, "", "Guardian")]
+    [InlineData("", "", "Guardian")]
+    [InlineData("   ", "", "Guardian")]
+    [InlineData("A.", "", null)]
+    [InlineData("A.", "", "")]
+    [InlineData("A.", "", "   ")]
+    [InlineData("A.", " van ", "   ")]
+    public void GuardianWithoutRequiredNameIsOmittedEverywhereAndCounted(
+        string initials,
+        string prefix,
+        string surname)
+    {
+        OuderVerzorger guardian = CreateGuardian(
+            email: "guardian@example.test",
+            wantsEmail: true,
+            initials,
+            prefix,
+            surname);
+
+        ResolvedExportPopulation population = ExportPopulationResolver.Resolve(CreateModel(guardian));
+        SDScsvV1 v1 = new SDScsvHelperV1(population, RunDate).ConvertToSDSCSV();
+        SDScsvV2 v2 = new SDScsvHelperV2(population, RunDate).ConvertToSDSCSV();
+        string guardianId = guardian.Uuid.ToString();
+
+        Assert.Empty(population.Guardians);
+        Assert.Equal(1, population.GuardiansExcludedForMissingName);
+        Assert.DoesNotContain(v1.User, user => user.SISid == guardianId);
+        Assert.Empty(v1.Guardianrelationship);
+        Assert.DoesNotContain(v2.Users, user => user.sourcedId == guardianId);
+        Assert.DoesNotContain(v2.Roles, role => role.userSourcedId == guardianId);
+        Assert.DoesNotContain(v2.Relationships, relationship =>
+            relationship.relationshipUserSourcedId == guardianId);
     }
 
     [Theory]
@@ -78,6 +134,7 @@ public class CsvConversionTests
         Assert.DoesNotContain(v2.Users, user => user.sourcedId == guardianId);
         Assert.DoesNotContain(v2.Roles, role => role.userSourcedId == guardianId);
         Assert.DoesNotContain(v2.Relationships, relationship => relationship.relationshipUserSourcedId == guardianId);
+        Assert.Equal(0, population.GuardiansExcludedForMissingName);
     }
 
     [Fact]
@@ -122,8 +179,14 @@ public class CsvConversionTests
     }
 
     [Theory]
+    [InlineData("0612345678", "+31612345678")]
+    [InlineData("612345678", "+31612345678")]
     [InlineData("06 12345678", "+31612345678")]
+    [InlineData("0201234567", "+31201234567")]
+    [InlineData("201234567", "+31201234567")]
     [InlineData("0032 12 34 56 78", "+3212345678")]
+    [InlineData("+32 12 34 56 78", "+3212345678")]
+    [InlineData("tel: (06) 1234-5678", "+31612345678")]
     [InlineData("+12", "+12")]
     [InlineData("+1", "")]
     [InlineData("+123456789012345", "+123456789012345")]

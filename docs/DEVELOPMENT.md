@@ -9,11 +9,14 @@
 Install the .NET 10 SDK. Copy the ignored Development example and store the Somtoday secret with [.NET User Secrets](https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-10.0):
 
 ```powershell
-Copy-Item Somtoday2MicrosoftSDS/appsettings.Development.example.json Somtoday2MicrosoftSDS/appsettings.Development.json
-dotnet user-secrets set --project Somtoday2MicrosoftSDS/Somtoday2MicrosoftSDS.csproj 'Somtoday:ClientSecret' '<secret>'
+Set-Location Somtoday2MicrosoftSDS
+Copy-Item appsettings.Development.example.json appsettings.Development.json
+dotnet user-secrets set --project Somtoday2MicrosoftSDS.csproj 'Somtoday:ClientSecret' '<secret>'
 $env:DOTNET_ENVIRONMENT = 'Development'
-dotnet run --project Somtoday2MicrosoftSDS/Somtoday2MicrosoftSDS.csproj
+dotnet run
 ```
+
+Run those local application commands from the project directory so its content root and configuration-file lookup match the intended Development setup. Return to the repository root before using the solution, infrastructure, or script commands below.
 
 The example uses `UseDevelopmentStorage=true` for Azurite. Start Azurite or place a Development-only connection string in the ignored file. A configured service URI uses `DefaultAzureCredential` and takes precedence. The [Azurite support matrix](https://github.com/Azure/Azurite#support-matrix) records that Blob Versions are unsupported, so Azurite cannot validate the production rollback path.
 
@@ -59,9 +62,11 @@ az bicep build-params --file infra/main.example.bicepparam --outfile "$env:TEMP/
 
 `infra/main.bicep` is authoritative. Do not edit `infra/azuredeploy.json` manually.
 
+After compilation, verify that `Output__Folder` and the lifecycle prefix use the same normalized output-folder expression. The staging lifecycle must target block Blobs below `{container}/{normalizedOutputFolder}/.staging/`, delete current bases after more than one day since modification and previous versions after more than one day since creation, and contain no tag filter. Keep the separate seven-day previous-version rule and seven-day Blob soft delete unchanged. Compare regenerated ARM output canonically rather than relying on formatting alone.
+
 ### Blob publication and rollback tests
 
-Mandatory CI coverage uses the version-aware in-memory Blob fake in `DatasetPublisherTests`. It covers staging order, four complete promotion attempts, metadata, complete-set selection, guardian state, rollback failure, staging cleanup, cancellation, and safe logging without depending on an emulator.
+Mandatory CI coverage uses the version-aware in-memory Blob fake in `DatasetPublisherTests`. It covers the shared output-root staging path, sequential staging-name reuse and overwrite after cleanup exhaustion, new and legacy startup cleanup, four complete promotion attempts, the four metadata values without tags, complete-set selection that excludes staging, guardian state, rollback failure, cancellation, and safe logging without depending on an emulator. Layout tests reserve a case-insensitive first `.staging` live segment. Export tests cover guardian name eligibility, count-only diagnostics, permissive Dutch phone normalization, exact wire names and headers, CR/LF rejection, and matching-only names. Host tests verify that only the exact `--empty-csv` switch has command-line behavior and that no command-line configuration provider is registered.
 
 Azurite is useful for basic local Blob connectivity but is not evidence for version-based recovery because Blob Versions are unsupported. An optional end-to-end check must use a temporary, non-production StorageV2 account with versioning enabled, a disposable container, the same seven-day lifecycle policy, and `Storage Blob Data Contributor` for the test identity. Use only header-only synthetic datasets, verify that server-side promotion creates versions and that a deliberately interrupted promotion can restore a complete older application-metadata group, then delete the temporary resource group. Never point this check at production output.
 

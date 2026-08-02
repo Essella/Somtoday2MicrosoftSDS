@@ -5,7 +5,8 @@ internal sealed record ResolvedExportPopulation(
     IReadOnlyList<ResolvedClass> Classes,
     IReadOnlyList<Medewerker> Teachers,
     IReadOnlyList<Leerling> Students,
-    IReadOnlyList<ResolvedGuardian> Guardians);
+    IReadOnlyList<ResolvedGuardian> Guardians,
+    int GuardiansExcludedForMissingName);
 
 internal sealed record ResolvedClass(
     Lesgroep Source,

@@ -2,16 +2,27 @@ namespace Somtoday2MicrosoftSDS.Helpers;
 
 internal static class GuardianExportPolicy
 {
-    internal static bool IsExportable(OuderVerzorger guardian)
+    internal static bool HasUsableContact(OuderVerzorger guardian)
     {
         return guardian.WenstContactViaEMail && !string.IsNullOrWhiteSpace(guardian.Emailadres);
     }
 
+    internal static bool HasUsableName(OuderVerzorger guardian)
+    {
+        return !string.IsNullOrWhiteSpace(guardian.Voorletters)
+            && !string.IsNullOrWhiteSpace(guardian.Achternaam);
+    }
+
+    internal static string GetGivenName(OuderVerzorger guardian)
+    {
+        return guardian.Voorletters?.Trim() ?? string.Empty;
+    }
+
     internal static string GetFamilyName(OuderVerzorger guardian)
     {
-        return string.IsNullOrWhiteSpace(guardian.Voorvoegsel)
-            ? guardian.Achternaam ?? string.Empty
-            : $"{guardian.Voorvoegsel} {guardian.Achternaam}";
+        string prefix = guardian.Voorvoegsel?.Trim() ?? string.Empty;
+        string surname = guardian.Achternaam?.Trim() ?? string.Empty;
+        return prefix.Length == 0 ? surname : $"{prefix} {surname}";
     }
 
     internal static string GetPhone(OuderVerzorger guardian)

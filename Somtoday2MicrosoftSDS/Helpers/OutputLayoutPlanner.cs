@@ -53,6 +53,13 @@ internal static class OutputLayoutPlanner
                 string institutionSegment = BlobPathHelper.SanitizeSegment(
                     school.InstitutionAbbreviation,
                     "institution abbreviation");
+                if (separateByInstitution && IsReservedFirstRelativeSegment(institutionSegment))
+                {
+                    throw new ArgumentException(
+                        "institution abbreviation maps to the reserved '.staging' blob path segment",
+                        "institution abbreviation");
+                }
+
                 List<CandidateLocation> locations = school.Locations
                     .Select(location => new CandidateLocation(
                         school.SchoolUuid,
@@ -126,7 +133,18 @@ internal static class OutputLayoutPlanner
             outputPrefix,
             separateByInstitution);
 
+        foreach (IGrouping<Guid, PlannedLocation> reservedSchool in plannedLocations
+            .Where(location => IsReservedFirstRelativeSegment(location.FirstRelativeSegment))
+            .GroupBy(location => location.Candidate.SchoolUuid))
+        {
+            failedSchoolUuids.Add(reservedSchool.Key);
+            issues.Add(new OutputLayoutIssue(
+                [reservedSchool.Key],
+                "A location abbreviation maps to the reserved '.staging' blob path segment"));
+        }
+
         foreach (IGrouping<string, PlannedLocation> collision in plannedLocations
+            .Where(location => !failedSchoolUuids.Contains(location.Candidate.SchoolUuid))
             .GroupBy(location => location.BasePrefix, StringComparer.OrdinalIgnoreCase)
             .Where(group => group.Count() > 1))
         {
@@ -177,10 +195,18 @@ internal static class OutputLayoutPlanner
                         location.InstitutionSegment,
                         location.LocationSegment)
                     : BlobPathHelper.Combine(outputPrefix, locationSegment);
+                string firstRelativeSegment = separateByInstitution
+                    ? location.InstitutionSegment
+                    : locationSegment;
 
-                return new PlannedLocation(location, prefix);
+                return new PlannedLocation(location, prefix, firstRelativeSegment);
             })
             .ToList();
+    }
+
+    private static bool IsReservedFirstRelativeSegment(string segment)
+    {
+        return string.Equals(segment, ".staging", StringComparison.OrdinalIgnoreCase);
     }
 
     private static OutputLayoutLocation ToOutputLocation(CandidateLocation location)
@@ -201,5 +227,6 @@ internal static class OutputLayoutPlanner
 
     private sealed record PlannedLocation(
         CandidateLocation Candidate,
-        string BasePrefix);
+        string BasePrefix,
+        string FirstRelativeSegment);
 }

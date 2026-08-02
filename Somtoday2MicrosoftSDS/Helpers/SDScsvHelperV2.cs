@@ -270,7 +270,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 {
                     username = guardian.Emailadres,
                     sourcedId = guardian.Uuid.ToString(),
-                    givenName = guardian.Voorletters ?? string.Empty,
+                    givenName = GuardianExportPolicy.GetGivenName(guardian),
                     familyName = GuardianExportPolicy.GetFamilyName(guardian),
                     email = guardian.Emailadres,
                     phone = GuardianExportPolicy.GetPhone(guardian)

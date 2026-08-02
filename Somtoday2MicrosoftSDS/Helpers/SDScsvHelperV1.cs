@@ -170,7 +170,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 {
                     SISid = guardian.Uuid.ToString(),
                     Email = guardian.Emailadres,
-                    FirstName = guardian.Voorletters ?? string.Empty,
+                    FirstName = GuardianExportPolicy.GetGivenName(guardian),
                     Phone = GuardianExportPolicy.GetPhone(guardian),
                     LastName = GuardianExportPolicy.GetFamilyName(guardian)
                 });

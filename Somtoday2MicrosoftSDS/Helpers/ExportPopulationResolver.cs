@@ -57,20 +57,29 @@ internal static class ExportPopulationResolver
             model.Leerlingen,
             includedStudentIds,
             student => student.Uuid);
-        List<ResolvedGuardian> guardians = ResolveGuardians(model.OuderVerzorgers, includedStudentIds);
+        (List<ResolvedGuardian> guardians, int guardiansExcludedForMissingName) = ResolveGuardians(
+            model.OuderVerzorgers,
+            includedStudentIds);
 
-        return new ResolvedExportPopulation(model.Vestiging, classes, teachers, students, guardians);
+        return new ResolvedExportPopulation(
+            model.Vestiging,
+            classes,
+            teachers,
+            students,
+            guardians,
+            guardiansExcludedForMissingName);
     }
 
-    private static List<ResolvedGuardian> ResolveGuardians(
+    private static (List<ResolvedGuardian> Guardians, int GuardiansExcludedForMissingName) ResolveGuardians(
         IEnumerable<OuderVerzorger> sourceGuardians,
         HashSet<Guid> includedStudentIds)
     {
         List<ResolvedGuardian> guardians = [];
+        int guardiansExcludedForMissingName = 0;
 
         foreach (OuderVerzorger guardian in sourceGuardians)
         {
-            if (!GuardianExportPolicy.IsExportable(guardian))
+            if (!GuardianExportPolicy.HasUsableContact(guardian))
             {
                 continue;
             }
@@ -84,13 +93,21 @@ internal static class ExportPopulationResolver
                 }
             }
 
-            if (studentIds.Count > 0)
+            if (studentIds.Count == 0)
             {
-                guardians.Add(new ResolvedGuardian(guardian, studentIds));
+                continue;
             }
+
+            if (!GuardianExportPolicy.HasUsableName(guardian))
+            {
+                guardiansExcludedForMissingName++;
+                continue;
+            }
+
+            guardians.Add(new ResolvedGuardian(guardian, studentIds));
         }
 
-        return guardians;
+        return (guardians, guardiansExcludedForMissingName);
     }
 
     private static Dictionary<Guid, TValue> ToFirstById<TValue>(

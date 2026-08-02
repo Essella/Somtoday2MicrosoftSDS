@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.45.15.27210",
-      "templateHash": "5149538104654264194"
+      "templateHash": "14833949447606849872"
     }
   },
   "parameters": {
@@ -245,6 +245,9 @@
     "environmentName": "[format('{0}-env', variables('normalizedPrefix'))]",
     "jobName": "[format('{0}-job', variables('normalizedPrefix'))]",
     "containerName": "somtoday2microsoftsds",
+    "slashNormalizedOutputFolder": "[replace(trim(parameters('outputFolder')), '\\', '/')]",
+    "normalizedOutputFolderSegments": "[map(filter(split(variables('slashNormalizedOutputFolder'), '/'), lambda('segment', not(empty(trim(lambdaVariables('segment')))))), lambda('segment', trim(lambdaVariables('segment'))))]",
+    "normalizedOutputFolder": "[if(and(and(not(empty(variables('normalizedOutputFolderSegments'))), not(contains(variables('normalizedOutputFolderSegments'), '.'))), not(contains(variables('normalizedOutputFolderSegments'), '..'))), join(variables('normalizedOutputFolderSegments'), '/'), fail('outputFolder must contain at least one segment and may not contain . or .. segments.'))]",
     "bootstrapEnvironmentVariables": "[if(empty(parameters('somtodayClientSecret')), createArray(), createArray(createObject('name', 'Somtoday__ClientSecret', 'secretRef', 'somtoday-client-secret-bootstrap')))]",
     "jobSecrets": "[if(empty(parameters('somtodayClientSecret')), createArray(), createArray(createObject('name', 'somtoday-client-secret-bootstrap', 'value', parameters('somtodayClientSecret'))))]",
     "storageBlobDataContributorRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
@@ -296,6 +299,33 @@
       "properties": {
         "policy": {
           "rules": [
+            {
+              "enabled": true,
+              "name": "delete-staging-after-one-day",
+              "type": "Lifecycle",
+              "definition": {
+                "actions": {
+                  "baseBlob": {
+                    "delete": {
+                      "daysAfterModificationGreaterThan": 1
+                    }
+                  },
+                  "version": {
+                    "delete": {
+                      "daysAfterCreationGreaterThan": 1
+                    }
+                  }
+                },
+                "filters": {
+                  "blobTypes": [
+                    "blockBlob"
+                  ],
+                  "prefixMatch": [
+                    "[format('{0}/{1}/.staging/', parameters('blobContainerName'), variables('normalizedOutputFolder'))]"
+                  ]
+                }
+              }
+            },
             {
               "enabled": true,
               "name": "delete-previous-blob-versions-after-seven-days",
@@ -419,7 +449,7 @@
             {
               "name": "[variables('containerName')]",
               "image": "[parameters('imageReference')]",
-              "env": "[concat(createArray(createObject('name', 'DOTNET_ENVIRONMENT', 'value', 'Production'), createObject('name', 'AZURE_TOKEN_CREDENTIALS', 'value', 'ManagedIdentityCredential'), createObject('name', 'KeyVault__VaultUri', 'value', reference(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), '2023-07-01').vaultUri), createObject('name', 'KeyVault__SomtodayClientSecretName', 'value', parameters('somtodayClientSecretName')), createObject('name', 'Somtoday__ClientId', 'value', parameters('somtodayClientId')), createObject('name', 'Somtoday__Environment', 'value', parameters('somtodayEnvironment')), createObject('name', 'Storage__AzureBlob__ServiceUri', 'value', reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.blob), createObject('name', 'Storage__AzureBlob__Container', 'value', parameters('blobContainerName')), createObject('name', 'Output__Folder', 'value', parameters('outputFolder')), createObject('name', 'Output__GenerateEmptyCsv', 'value', string(parameters('generateEmptyCsv'))), createObject('name', 'Output__SeparateByInstitution', 'value', string(parameters('separateByInstitution'))), createObject('name', 'Output__SeparateByLocation', 'value', string(parameters('separateByLocation'))), createObject('name', 'SchoolDataSync__EnableGuardianSync', 'value', string(parameters('enableGuardianSync'))), createObject('name', 'UsernameFormat__Teacher', 'value', parameters('teacherUsernameFormat')), createObject('name', 'UsernameFormat__Student', 'value', parameters('studentUsernameFormat'))), variables('schoolEnvironmentVariables'), variables('includedLocationEnvironmentVariables'), variables('excludedLocationEnvironmentVariables'), variables('bootstrapEnvironmentVariables'))]",
+              "env": "[concat(createArray(createObject('name', 'DOTNET_ENVIRONMENT', 'value', 'Production'), createObject('name', 'AZURE_TOKEN_CREDENTIALS', 'value', 'ManagedIdentityCredential'), createObject('name', 'KeyVault__VaultUri', 'value', reference(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), '2023-07-01').vaultUri), createObject('name', 'KeyVault__SomtodayClientSecretName', 'value', parameters('somtodayClientSecretName')), createObject('name', 'Somtoday__ClientId', 'value', parameters('somtodayClientId')), createObject('name', 'Somtoday__Environment', 'value', parameters('somtodayEnvironment')), createObject('name', 'Storage__AzureBlob__ServiceUri', 'value', reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.blob), createObject('name', 'Storage__AzureBlob__Container', 'value', parameters('blobContainerName')), createObject('name', 'Output__Folder', 'value', variables('normalizedOutputFolder')), createObject('name', 'Output__GenerateEmptyCsv', 'value', string(parameters('generateEmptyCsv'))), createObject('name', 'Output__SeparateByInstitution', 'value', string(parameters('separateByInstitution'))), createObject('name', 'Output__SeparateByLocation', 'value', string(parameters('separateByLocation'))), createObject('name', 'SchoolDataSync__EnableGuardianSync', 'value', string(parameters('enableGuardianSync'))), createObject('name', 'UsernameFormat__Teacher', 'value', parameters('teacherUsernameFormat')), createObject('name', 'UsernameFormat__Student', 'value', parameters('studentUsernameFormat'))), variables('schoolEnvironmentVariables'), variables('includedLocationEnvironmentVariables'), variables('excludedLocationEnvironmentVariables'), variables('bootstrapEnvironmentVariables'))]",
               "resources": {
                 "cpu": "[json(parameters('cpu'))]",
                 "memory": "[parameters('memory')]"

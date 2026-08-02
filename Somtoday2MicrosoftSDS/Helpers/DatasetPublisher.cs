@@ -36,17 +36,20 @@ namespace Somtoday2MicrosoftSDS.Helpers
 
         private readonly IBlobPublicationStore _store;
         private readonly ILogger<DatasetPublisher> _logger;
+        private readonly string _outputPrefix;
         private readonly DateTimeOffset _runStartedUtc;
         private readonly string _runId;
 
         internal DatasetPublisher(
             IBlobPublicationStore store,
             ILogger<DatasetPublisher> logger,
+            string outputPrefix,
             DateTimeOffset runStartedUtc,
             string runId)
         {
             _store = store;
             _logger = logger;
+            _outputPrefix = outputPrefix;
             _runStartedUtc = runStartedUtc.ToUniversalTime();
             _runId = runId;
         }
@@ -82,7 +85,10 @@ namespace Somtoday2MicrosoftSDS.Helpers
             string livePrefix,
             CancellationToken cancellationToken)
         {
-            string stagingPrefix = BlobPathHelper.Combine(livePrefix, ".staging", _runId);
+            string stagingPrefix = BlobPathHelper.Combine(
+                _outputPrefix,
+                StagingDirectoryName,
+                _runId);
             IReadOnlyDictionary<string, string> metadata = CreateMetadata(dataset);
             List<string> stagedBlobNames = dataset.Files
                 .Select(file => BlobPathHelper.Combine(stagingPrefix, file.Name))

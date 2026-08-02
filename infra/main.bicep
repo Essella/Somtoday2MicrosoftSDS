@@ -115,6 +115,17 @@ var logAnalyticsName = '${normalizedPrefix}-logs'
 var environmentName = '${normalizedPrefix}-env'
 var jobName = '${normalizedPrefix}-job'
 var containerName = 'somtoday2microsoftsds'
+var slashNormalizedOutputFolder = replace(trim(outputFolder), '\\', '/')
+var normalizedOutputFolderSegments = map(
+  filter(split(slashNormalizedOutputFolder, '/'), segment => !empty(trim(segment))),
+  segment => trim(segment)
+)
+var normalizedOutputFolder = !empty(normalizedOutputFolderSegments) && !contains(normalizedOutputFolderSegments, '.') && !contains(
+    normalizedOutputFolderSegments,
+    '..'
+  )
+  ? join(normalizedOutputFolderSegments, '/')
+  : fail('outputFolder must contain at least one segment and may not contain . or .. segments.')
 
 var baseEnvironmentVariables = [
   {
@@ -151,7 +162,7 @@ var baseEnvironmentVariables = [
   }
   {
     name: 'Output__Folder'
-    value: outputFolder
+    value: normalizedOutputFolder
   }
   {
     name: 'Output__GenerateEmptyCsv'
@@ -248,6 +259,33 @@ resource storageManagementPolicy 'Microsoft.Storage/storageAccounts/managementPo
   properties: {
     policy: {
       rules: [
+        {
+          enabled: true
+          name: 'delete-staging-after-one-day'
+          type: 'Lifecycle'
+          definition: {
+            actions: {
+              baseBlob: {
+                delete: {
+                  daysAfterModificationGreaterThan: 1
+                }
+              }
+              version: {
+                delete: {
+                  daysAfterCreationGreaterThan: 1
+                }
+              }
+            }
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+              prefixMatch: [
+                '${blobContainerName}/${normalizedOutputFolder}/.staging/'
+              ]
+            }
+          }
+        }
         {
           enabled: true
           name: 'delete-previous-blob-versions-after-seven-days'
