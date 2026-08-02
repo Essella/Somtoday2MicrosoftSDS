@@ -118,8 +118,9 @@ jobs:
                 and .properties.template.containers[0].resources.memory == "1Gi"
               ),
               secretIsSecure: (
-                .parameters.somtodayClientSecret.type | ascii_downcase
-              ) == "securestring",
+                (.parameters.somtodayClientSecret.type | ascii_downcase)
+                == "securestring"
+              ),
               noCpuOrMemoryParameters: (
                 (.parameters | has("cpu") | not)
                 and (.parameters | has("memory") | not)
