@@ -20,7 +20,6 @@ namespace Somtoday2MicrosoftSDS.Helpers
     {
         internal static bool TryCreate(
             IConfiguration configuration,
-            string resolvedClientSecret,
             bool isDevelopment,
             out SyncConfiguration value,
             out string[] errors)
@@ -59,9 +58,10 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 validationErrors.Add("Somtoday:ClientId is missing");
             }
 
-            if (string.IsNullOrWhiteSpace(resolvedClientSecret))
+            string clientSecret = configuration["Somtoday:ClientSecret"];
+            if (string.IsNullOrWhiteSpace(clientSecret))
             {
-                validationErrors.Add("The resolved Somtoday client secret is missing");
+                validationErrors.Add("Somtoday:ClientSecret is missing");
             }
 
             string configuredEnvironment = configuration["Somtoday:Environment"];
@@ -114,7 +114,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 ? new SyncConfiguration(
                     schoolUuids.ToArray(),
                     clientId.Trim(),
-                    resolvedClientSecret,
+                    clientSecret.Trim(),
                     somEnvironment,
                     configuration.GetSection("Locations:IncludedLocationCodes").Get<string[]>() ?? [],
                     configuration.GetSection("Locations:ExcludedLocationCodes").Get<string[]>() ?? [],

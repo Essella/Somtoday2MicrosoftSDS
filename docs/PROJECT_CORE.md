@@ -73,7 +73,7 @@ Always read this core. Then read only the documents selected by this matrix.
 | Blob paths, grouping, staging, retries, rollback, output cleanup | [Publication contract](contracts/PUBLICATION.md), [deviation register](DEVIATIONS.md) | Only if externally visible behavior changes |
 | Component ownership, orchestration, data flow, side effects | [Architecture](ARCHITECTURE.md), [deviation register](DEVIATIONS.md) | No, unless behavior becomes externally visible |
 | Configuration keys or username expressions | [Configuration guide](operations/CONFIGURATION.md), relevant contract, [deviation register](DEVIATIONS.md) | Yes |
-| Azure resources, identity, Key Vault, scheduling, deployment | [Deployment guide](operations/DEPLOYMENT.md), [architecture](ARCHITECTURE.md), [security policy](../SECURITY.md) | Yes |
+| Azure resources, identity, Container Apps secrets, scheduling, deployment | [Deployment guide](operations/DEPLOYMENT.md), [architecture](ARCHITECTURE.md), [security policy](../SECURITY.md) | Yes |
 | Releases, artifacts, versioning, CI release behavior | [Release guide](operations/RELEASES.md), [deviation register](DEVIATIONS.md), [notice](../NOTICE.md) | Yes |
 | Local build, tests, container smoke tests, generated client | [Development guide](DEVELOPMENT.md), [contributing guide](../CONTRIBUTING.md) | No |
 | Security, privacy, secrets, logging | [Security policy](../SECURITY.md), relevant contract/operations guide | Only if operator action or public behavior changes |

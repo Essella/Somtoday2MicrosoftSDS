@@ -24,14 +24,12 @@ public class CoreBehaviorTests
         Assert.Empty(configuration.GetSection("Somtoday:SchoolUUID").GetChildren());
         Assert.True(string.IsNullOrEmpty(configuration["Somtoday:ClientId"]));
         Assert.True(string.IsNullOrEmpty(configuration["Somtoday:ClientSecret"]));
-        Assert.True(string.IsNullOrEmpty(configuration["KeyVault:VaultUri"]));
         Assert.True(string.IsNullOrEmpty(configuration["Storage:AzureBlob:ServiceUri"]));
         Assert.True(string.IsNullOrEmpty(configuration["Storage:AzureBlob:ConnectionString"]));
         Assert.True(configuration.GetValue<bool>("Output:SeparateByInstitution"));
         Assert.False(configuration.GetValue<bool>("Output:SeparateByLocation"));
         Assert.False(SyncConfiguration.TryCreate(
             configuration,
-            resolvedClientSecret: string.Empty,
             isDevelopment: false,
             out _,
             out _));
@@ -49,7 +47,6 @@ public class CoreBehaviorTests
 
         bool isValid = SyncConfiguration.TryCreate(
             configuration,
-            "client-secret",
             isDevelopment: true,
             out SyncConfiguration result,
             out string[] errors);
@@ -57,6 +54,25 @@ public class CoreBehaviorTests
         Assert.True(isValid, string.Join(Environment.NewLine, errors));
         Assert.Equal(new[] { FirstSchoolUuid }, result.SchoolUuids);
         Assert.Equal(BlobAuthenticationMode.DefaultAzureCredential, BlobClientFactory.GetAuthenticationMode(result));
+    }
+
+    [Fact]
+    public void ConfigurationReadsClientSecretDirectlyFromConfiguration()
+    {
+        IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
+        {
+            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
+            ["Somtoday:ClientSecret"] = "configured-test-secret"
+        });
+
+        Assert.True(
+            SyncConfiguration.TryCreate(
+                configuration,
+                isDevelopment: true,
+                out SyncConfiguration result,
+                out string[] errors),
+            string.Join(Environment.NewLine, errors));
+        Assert.Equal("configured-test-secret", result.ClientSecret);
     }
 
     [Fact]
@@ -72,7 +88,6 @@ public class CoreBehaviorTests
         Assert.True(
             SyncConfiguration.TryCreate(
                 configuration,
-                "client-secret",
                 isDevelopment: true,
                 out SyncConfiguration result,
                 out string[] errors),
@@ -96,7 +111,6 @@ public class CoreBehaviorTests
 
         Assert.True(SyncConfiguration.TryCreate(
             defaults,
-            "client-secret",
             true,
             out SyncConfiguration defaultResult,
             out string[] defaultErrors),
@@ -106,7 +120,6 @@ public class CoreBehaviorTests
 
         Assert.True(SyncConfiguration.TryCreate(
             overrides,
-            "client-secret",
             true,
             out SyncConfiguration overrideResult,
             out string[] overrideErrors),
@@ -127,7 +140,6 @@ public class CoreBehaviorTests
 
         Assert.False(SyncConfiguration.TryCreate(
             configuration,
-            "client-secret",
             isDevelopment: false,
             out _,
             out string[] errors));
@@ -148,7 +160,6 @@ public class CoreBehaviorTests
         Assert.True(
             SyncConfiguration.TryCreate(
                 configuration,
-                "client-secret",
                 isDevelopment: false,
                 out SyncConfiguration result,
                 out string[] errors),
@@ -170,7 +181,6 @@ public class CoreBehaviorTests
 
         Assert.False(SyncConfiguration.TryCreate(
             configuration,
-            "client-secret",
             isDevelopment,
             out _,
             out string[] errors));
@@ -192,7 +202,6 @@ public class CoreBehaviorTests
 
         Assert.False(SyncConfiguration.TryCreate(
             configuration,
-            "client-secret",
             isDevelopment: false,
             out _,
             out string[] productionErrors));
@@ -203,7 +212,6 @@ public class CoreBehaviorTests
         Assert.True(
             SyncConfiguration.TryCreate(
                 configuration,
-                "client-secret",
                 isDevelopment: true,
                 out SyncConfiguration developmentResult,
                 out string[] developmentErrors),
@@ -228,7 +236,6 @@ public class CoreBehaviorTests
         Assert.True(
             SyncConfiguration.TryCreate(
                 configuration,
-                "client-secret",
                 isDevelopment: false,
                 out _,
                 out string[] errors),
@@ -252,9 +259,9 @@ public class CoreBehaviorTests
             ["Somtoday:SchoolUUID:0"] = "not-a-uuid"
         });
 
-        Assert.False(SyncConfiguration.TryCreate(scalarConfiguration, "client-secret", true, out _, out _));
-        Assert.False(SyncConfiguration.TryCreate(duplicateConfiguration, "client-secret", true, out _, out _));
-        Assert.False(SyncConfiguration.TryCreate(invalidConfiguration, "client-secret", true, out _, out _));
+        Assert.False(SyncConfiguration.TryCreate(scalarConfiguration, true, out _, out _));
+        Assert.False(SyncConfiguration.TryCreate(duplicateConfiguration, true, out _, out _));
+        Assert.False(SyncConfiguration.TryCreate(invalidConfiguration, true, out _, out _));
     }
 
     [Fact]
@@ -266,7 +273,7 @@ public class CoreBehaviorTests
         });
 
         Assert.True(
-            SyncConfiguration.TryCreate(configuration, "client-secret", true, out _, out string[] errors),
+            SyncConfiguration.TryCreate(configuration, true, out _, out string[] errors),
             string.Join(Environment.NewLine, errors));
     }
 
@@ -288,6 +295,7 @@ public class CoreBehaviorTests
                 {
                     ["Somtoday:Environment"] = "PROD",
                     ["Somtoday:ClientId"] = "client-from-json",
+                    ["Somtoday:ClientSecret"] = "test-secret",
                     ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
                     ["Storage:AzureBlob:ConnectionString"] = "UseDevelopmentStorage=true",
                     ["Storage:AzureBlob:Container"] = "sds",
@@ -301,7 +309,6 @@ public class CoreBehaviorTests
             Assert.Equal("client-from-environment", configuration["Somtoday:ClientId"]);
             Assert.True(SyncConfiguration.TryCreate(
                 configuration,
-                "client-secret",
                 isDevelopment: true,
                 out SyncConfiguration result,
                 out string[] errors),
@@ -508,6 +515,7 @@ public class CoreBehaviorTests
         {
             ["Somtoday:Environment"] = "PROD",
             ["Somtoday:ClientId"] = "client-id",
+            ["Somtoday:ClientSecret"] = "client-secret",
             ["Storage:AzureBlob:ConnectionString"] = "UseDevelopmentStorage=true",
             ["Storage:AzureBlob:Container"] = "sds",
             ["Output:Folder"] = "sds/output",

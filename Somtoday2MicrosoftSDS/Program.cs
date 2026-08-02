@@ -48,12 +48,10 @@ namespace Somtoday2MicrosoftSDS
             builder.Logging.SetMinimumLevel(LogLevel.Information);
             builder.Services.AddHttpClient();
             builder.Services.AddSingleton<FileHelper>();
-            builder.Services.AddSingleton<SomtodaySecretProvider>();
 
             using IHost host = builder.Build();
             _logger = host.Services.GetRequiredService<ILogger<Program>>();
             FileHelper fileHelper = host.Services.GetRequiredService<FileHelper>();
-            SomtodaySecretProvider secretProvider = host.Services.GetRequiredService<SomtodaySecretProvider>();
             IHostApplicationLifetime applicationLifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
             await host.StartAsync();
             CancellationToken cancellationToken = applicationLifetime.ApplicationStopping;
@@ -67,18 +65,9 @@ namespace Somtoday2MicrosoftSDS
                     "Application starting with version: {Version}",
                     System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString());
 
-                string resolvedClientSecret = await secretProvider.ResolveAsync(
-                    builder.Configuration["KeyVault:VaultUri"],
-                    builder.Configuration["KeyVault:SomtodayClientSecretName"],
-                    Environment.GetEnvironmentVariable(SomtodaySecretProvider.BootstrapEnvironmentVariable),
-                    builder.Configuration["Somtoday:ClientSecret"],
-                    builder.Environment.IsDevelopment(),
-                    cancellationToken);
-
                 SettingsHelper.Initialize(builder.Configuration);
                 if (!SyncConfiguration.TryCreate(
                     builder.Configuration,
-                    resolvedClientSecret,
                     builder.Environment.IsDevelopment(),
                     out SyncConfiguration configuration,
                     out string[] errors))

@@ -11,14 +11,15 @@ Operators need an Azure subscription, permission to create resources and role as
 `infra/main.bicep` provisions:
 
 - a StorageV2 account with Blob versioning, seven-day general previous-version lifecycle retention, one-day staging base/version lifecycle eligibility, seven-day Blob soft delete, and a private Blob container;
-- a Key Vault using RBAC, soft delete, and purge protection;
 - Log Analytics;
 - a Consumption Container Apps environment;
-- a scheduled Container Apps Job with a system-assigned managed identity.
+- a scheduled Container Apps Job with a system-assigned managed identity and a Somtoday client-secret.
 
-The identity receives `Storage Blob Data Contributor` on the output container and `Key Vault Secrets Officer` on the application Vault.
+The identity receives `Storage Blob Data Contributor` on the output container. The Job secret is mapped to `Somtoday__ClientSecret`; it is not accessed through the managed identity.
 
-Defaults are public `latest` image, `0 1 * * *` UTC schedule, one replica, 0.5 vCPU, 1 GiB memory, 3,600-second Job timeout, and one Container Apps retry. Pin production deployments to a release tag or digest. Container Apps cron schedules are evaluated in UTC.
+Defaults are public `latest` image, `0 4,16 * * *` UTC schedule (04:00 and 16:00 UTC), one replica, 0.25 vCPU, 1 GiB memory, 3,600-second Job timeout, and one Container Apps retry. Pin production deployments to a release tag or digest. Container Apps cron schedules are evaluated in UTC.
+
+All resources use the region of the selected resource group. The Azure Portal already supplies that standard **Region** field, so the template no longer displays a separate location parameter with the unevaluated `resourceGroup().location` expression.
 
 Output is separated by institution by default and combines selected locations within each institution. The `separateByInstitution` and `separateByLocation` deployment parameters map to the application's independent output-layout settings.
 
@@ -63,10 +64,8 @@ The repository does not provision or export the Power Automate flow, SDS data-Fl
 The Deploy to Azure button in the Dutch [README](../../README.md) uses `infra/azuredeploy.json`. `infra/main.bicep` remains the source; do not edit the generated ARM JSON manually. CI verifies that both representations remain aligned.
 
 1. Select the deployment button and choose subscription, resource group, and region.
-2. Supply at least `schoolUuids` as a JSON array and `somtodayClientId`; optionally choose `PROD`, `TEST`, or `ACCEPTATIE` and adjust the two output-layout parameters. NIGHTLY is not a production deployment parameter.
-3. Supply `somtodayClientSecret` only for initial bootstrap or rotation.
-4. After RBAC propagation, start one manual run and inspect logs and Blob output.
-5. Redeploy the same resource group and `namePrefix` without `somtodayClientSecret`.
+2. Supply `schoolUuids` as a JSON array, `somtodayClientId`, and the required secure `somtodayClientSecret`; optionally choose `PROD`, `TEST`, or `ACCEPTATIE` and adjust the two output-layout parameters. NIGHTLY is not a production deployment parameter.
+3. After RBAC propagation, start one manual run and inspect logs and Blob output.
 
 The deployment does not create a free Azure subscription or grant Somtoday access.
 
@@ -79,13 +78,7 @@ Copy-Item infra/main.example.bicepparam infra/main.bicepparam
 # Set schoolUuids and somtodayClientId.
 
 az group create --name rg-somtoday-sds --location westeurope
-az deployment group create --resource-group rg-somtoday-sds --parameters infra/main.bicepparam
-```
-
-For bootstrap or rotation, expose the value only to the current shell:
-
-```powershell
-$env:SOMTODAY_BOOTSTRAP_SECRET = Read-Host 'Somtoday client secret' -MaskInput
+$env:SOMTODAY_CLIENT_SECRET = Read-Host 'Somtoday client secret' -MaskInput
 az deployment group create --resource-group rg-somtoday-sds --parameters infra/main.bicepparam
 ```
 
@@ -97,11 +90,10 @@ az containerapp job execution list --name somtodaysds-job --resource-group rg-so
 az containerapp job logs show --name somtodaysds-job --resource-group rg-somtoday-sds --container somtoday2microsoftsds --follow --tail 100
 ```
 
-Then remove the bootstrap value and redeploy:
+Remove the shell value when the deployment is complete:
 
 ```powershell
-Remove-Item Env:SOMTODAY_BOOTSTRAP_SECRET
-az deployment group create --resource-group rg-somtoday-sds --parameters infra/main.bicepparam
+Remove-Item Env:SOMTODAY_CLIENT_SECRET
 ```
 
 ## Privacy, cost, and responsibility

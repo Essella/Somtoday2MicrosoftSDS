@@ -12,7 +12,7 @@ Gebruik de documentatie die bij uw taak hoort:
 
 | Taak | Documentatie |
 |---|---|
-| Configuratie, locaties, gebruikersnaamregels of Key Vault | [Configuratiehandleiding](docs/operations/CONFIGURATION.md) |
+| Configuratie, locaties, gebruikersnaamregels of secrets | [Configuratiehandleiding](docs/operations/CONFIGURATION.md) |
 | Inhoud van V1/V2.1, klassen, personen of guardians | [Exportcontract](docs/contracts/EXPORT.md) |
 | Mappen, samenvoegen, staging, retries, rollback of opruimen | [Publicatiecontract](docs/contracts/PUBLICATION.md) |
 | Azure-resources, identity, planning of uitrollen | [Azure-deploymenthandleiding](docs/operations/DEPLOYMENT.md) |
@@ -39,7 +39,7 @@ Houd rekening met de door Somtoday gestelde tijdvensters en gebruiksvoorwaarden 
 
 ## Implementeren en gebruiken
 
-`infra/main.bicep` maakt de benodigde Blob Storage, Key Vault, Log Analytics en geplande Container Apps Job met managed identity. Gebruik de knop hierboven of volg de [Azure-deploymenthandleiding](docs/operations/DEPLOYMENT.md). Pin productie op een releasetag of image-digest in plaats van `latest`.
+`infra/main.bicep` maakt de benodigde Blob Storage, Log Analytics en geplande Container Apps Job met managed identity. Het Somtoday-clientsecret is een secret van de Job. Gebruik de knop hierboven of volg de [Azure-deploymenthandleiding](docs/operations/DEPLOYMENT.md). Pin productie op een releasetag of image-digest in plaats van `latest`.
 
 De applicatie ondersteunt meerdere Somtoday-instellingen, locatie-inclusie en -exclusie, afzonderlijke gebruikersnaamregels voor docenten en leerlingen, optionele guardian-relaties en bestanden met alleen headers. Uitvoer kan onafhankelijk per instelling en per vestiging worden gegroepeerd; standaard krijgt iedere instelling één V1- en één V2.1-dataset waarin de geselecteerde vestigingen zijn samengevoegd. Voor iedere geplande scope probeert de applicatie altijd beide SDS-versies met dezelfde populatie te genereren; er bestaat geen instelling of opdrachtregeloptie om V1 of V2.1 uit te sluiten. Zie de [configuratiehandleiding](docs/operations/CONFIGURATION.md) en het [publicatiecontract](docs/contracts/PUBLICATION.md) voor alle vier indelingen en conflictregels.
 

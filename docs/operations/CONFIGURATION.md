@@ -9,9 +9,7 @@ This operator-facing guide describes configuration and current expression syntax
 | Setting | Production | Development |
 |---|---|---|
 | `DOTNET_ENVIRONMENT` | `Production` | Must be explicitly `Development` for local fallbacks |
-| `KeyVault__VaultUri` | Required HTTPS URI | Optional |
-| `KeyVault__SomtodayClientSecretName` | Optional; default `somtoday-client-secret` | Same |
-| `Somtoday__ClientSecret` | Temporary Key Vault bootstrap/rotation only | Effective secret when no Vault URI is configured |
+| `Somtoday__ClientSecret` | Required; supplied by the Container Apps Job secret | Required; use an environment variable or .NET User Secrets |
 | `Somtoday__ClientId` | Required | Required |
 | `Somtoday__SchoolUUID__0` and higher | At least one unique UUID | Same |
 | `Somtoday__Environment` | Full `PROD`, `TEST`, or `ACCEPTATIE` preferred | Same, plus `NIGHTLY` for local Development only |
@@ -83,15 +81,8 @@ For a user with `Voorletters = J`, `Achternaam = Jansen`, `Gebruikersnaam = jjan
 
 Use only properties appropriate for the account type. Validate both formats with synthetic or appropriately governed representative users before production. The export is matching-only, so configure Microsoft SDS not to create unmatched teacher or pupil accounts.
 
-## Key Vault bootstrap and rotation
+## Somtoday client secret
 
-When `KeyVault__VaultUri` is set, Key Vault is always the effective secret source:
+`Somtoday__ClientSecret` is read directly from configuration and is required in every environment. The production Bicep deployment stores the secure `somtodayClientSecret` parameter as a Container Apps Job secret and maps it to this configuration key. Rotate the credential by redeploying with the replacement secure parameter value. Never store a real secret or production connection string in a tracked configuration file.
 
-1. If the Vault secret is absent and a temporary `Somtoday__ClientSecret` is supplied, create the initial version.
-2. If the temporary value differs, create exactly one new version.
-3. If it matches, perform no write and remove the temporary configuration.
-4. With no temporary value, use the current Vault version.
-
-Missing values, authorization errors, failed writes, and other Vault failures stop the run with exit code `1`. Never store a real secret or production connection string in a tracked configuration file.
-
-Secret values and OAuth response bodies are not logged. Old Key Vault secret versions remain available for audit or recovery; the application neither rotates the upstream Somtoday credential nor deletes old versions. After a successful bootstrap or rotation, remove the temporary value and redeploy so the corresponding Container Apps secret and environment reference are removed.
+Secret values and OAuth response bodies are not logged.

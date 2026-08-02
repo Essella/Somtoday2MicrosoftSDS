@@ -5,7 +5,6 @@ Somtoday2MicrosoftSDS incorporates the following direct runtime dependencies. Ve
 | Component | Version | License | Copyright / project |
 |---|---:|---|---|
 | Azure.Identity | 1.21.0 | MIT | Microsoft Corporation; [Azure SDK for .NET](https://github.com/Azure/azure-sdk-for-net) |
-| Azure.Security.KeyVault.Secrets | 4.11.0 | MIT | Microsoft Corporation; [Azure SDK for .NET](https://github.com/Azure/azure-sdk-for-net) |
 | Azure.Storage.Blobs | 12.26.0 | MIT | Microsoft Corporation; [Azure SDK for .NET](https://github.com/Azure/azure-sdk-for-net) |
 | CsvHelper | 33.1.0 | MS-PL OR Apache-2.0 | Copyright 2009–2024 Josh Close; [CsvHelper](https://joshclose.github.io/CsvHelper/) |
 | Newtonsoft.Json | 13.0.4 | MIT | Copyright 2008 James Newton-King; [Json.NET](https://www.newtonsoft.com/json) |

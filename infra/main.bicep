@@ -1,20 +1,17 @@
 targetScope = 'resourceGroup'
 
-@description('Korte, unieke prefix voor alle resources. Gebruik alleen kleine letters, cijfers en koppeltekens.')
+@description('Korte prefix voor de namen van alle resources. Gebruik 3-12 kleine letters, cijfers of koppeltekens; standaard: somtodaysds.')
 @minLength(3)
 @maxLength(12)
 param namePrefix string = 'somtodaysds'
 
-@description('Azure-regio voor alle resources.')
-param location string = resourceGroup().location
-
-@description('Publieke GHCR-image inclusief tag of digest.')
+@description('Containerimage uit GHCR, inclusief release-tag of digest. Gebruik in productie bij voorkeur een vaste tag of digest; standaard: latest.')
 param imageReference string = 'ghcr.io/essella/somtoday2microsoftsds:latest'
 
-@description('Cron-expressie in UTC.')
-param cronExpression string = '0 1 * * *'
+@description('Cron-schema in UTC voor de Job. Standaard: dagelijks om 03:00 en 15:00 UTC (0 3,15 * * *). Dat betekent 04:00 en 16:00 in Nederland (CET/CEST).')
+param cronExpression string = '0 3,15 * * *'
 
-@description('CPU per jobreplica.')
+@description('vCPU per Job-replica. Kies een ondersteunde waarde tussen 0.25 en 2.0; standaard: 0.25 vCPU.')
 @allowed([
   '0.25'
   '0.5'
@@ -25,9 +22,9 @@ param cronExpression string = '0 1 * * *'
   '1.75'
   '2.0'
 ])
-param cpu string = '0.5'
+param cpu string = '0.25'
 
-@description('Geheugen per jobreplica.')
+@description('Geheugen per Job-replica. Kies een ondersteunde waarde tussen 0.5 en 4 GiB; standaard: 1 GiB.')
 @allowed([
   '0.5Gi'
   '1Gi'
@@ -40,24 +37,24 @@ param cpu string = '0.5'
 ])
 param memory string = '1Gi'
 
-@description('Maximale looptijd per replica in seconden.')
+@description('Maximale looptijd van één Job-replica in seconden (1-3600); standaard: 3600 seconden.')
 @minValue(1)
 @maxValue(3600)
 param replicaTimeoutSeconds int = 3600
 
-@description('Aantal retries na een mislukte replica.')
+@description('Aantal extra pogingen na een mislukte Job-replica; standaard: 1.')
 @minValue(0)
 param replicaRetryLimit int = 1
 
-@description('Somtoday-school-UUIDs.')
+@description('Verplicht: JSON-array met minstens één Somtoday-instellings-UUID. Voorbeeld: ["11111111-1111-1111-1111-111111111111"]. Voorbeeld met twee instellingen: ["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"].')
 @minLength(1)
 param schoolUuids array
 
-@description('Somtoday OAuth-client-ID.')
+@description('Verplicht: OAuth-client-ID van Somtoday Connect.')
 @minLength(1)
 param somtodayClientId string
 
-@description('Somtoday-omgeving voor productie-infrastructuur: PROD, TEST of ACCEPTATIE.')
+@description('Somtoday-omgeving: PROD, TEST of ACCEPTATIE; standaard: PROD.')
 @allowed([
   'PROD'
   'TEST'
@@ -65,44 +62,42 @@ param somtodayClientId string
 ])
 param somtodayEnvironment string = 'PROD'
 
-@description('Optionele tijdelijke bootstrap- of rotatiewaarde. Deploy na succesvolle opslag opnieuw met een lege waarde.')
+@description('Verplicht: OAuth-clientsecret van Somtoday Connect. Wordt veilig opgeslagen als secret van de Container Apps Job.')
 @secure()
-param somtodayClientSecret string = ''
+@minLength(1)
+param somtodayClientSecret string
 
-@description('Naam van het Somtoday-secret in Key Vault.')
-param somtodayClientSecretName string = 'somtoday-client-secret'
-
-@description('Alleen deze Somtoday-locatiecodes opnemen; leeg betekent alle locaties.')
+@description('Optionele JSON-array met Somtoday-locatiecodes om op te nemen, bijvoorbeeld ["LOC1", "LOC2"]. Leeg betekent alle locaties.')
 param includedLocationCodes array = []
 
-@description('Deze Somtoday-locatiecodes uitsluiten.')
+@description('Optionele JSON-array met Somtoday-locatiecodes om uit te sluiten. Uitsluiting heeft voorrang op opname.')
 param excludedLocationCodes array = []
 
-@description('Genereer School Data Sync guardian-relaties.')
+@description('Exporteer SDS-guardiangebruikers en -relaties; standaard: false.')
 param enableGuardianSync bool = false
 
-@description('Gebruikersnaamformaat voor medewerkers.')
+@description('Gebruikersnaamexpressie voor medewerkers; standaard: Emailadres.')
 param teacherUsernameFormat string = 'Emailadres'
 
-@description('Gebruikersnaamformaat voor leerlingen.')
+@description('Gebruikersnaamexpressie voor leerlingen; standaard: Emailadres.')
 param studentUsernameFormat string = 'Emailadres'
 
-@description('Blobcontainer voor de CSV-uitvoer.')
+@description('Naam van de privé-Blobcontainer voor de CSV-uitvoer; standaard: sds.')
 param blobContainerName string = 'sds'
 
-@description('Virtuele map in de Blobcontainer.')
+@description('Virtuele basismap in de Blobcontainer voor de uitvoer; standaard: sds/output.')
 param outputFolder string = 'sds/output'
 
-@description('Altijd lege CSV-bestanden genereren.')
+@description('Genereer altijd SDS-bestanden met alleen headers; standaard: false.')
 param generateEmptyCsv bool = false
 
-@description('Maak een afzonderlijke uitvoermap per Somtoday-instelling.')
+@description('Maak een afzonderlijke uitvoermap per Somtoday-instelling; standaard: true.')
 param separateByInstitution bool = true
 
-@description('Maak een afzonderlijke uitvoermap per Somtoday-vestiging.')
+@description('Maak een afzonderlijke uitvoermap per Somtoday-vestiging; standaard: false.')
 param separateByLocation bool = false
 
-@description('Tags voor alle resources die tags ondersteunen.')
+@description('Optionele tags voor alle resources die tags ondersteunen.')
 param tags object = {
   application: 'Somtoday2MicrosoftSDS'
 }
@@ -110,7 +105,6 @@ param tags object = {
 var normalizedPrefix = toLower(namePrefix)
 var uniqueSuffix = uniqueString(subscription().subscriptionId, resourceGroup().id)
 var storageAccountName = take('sds${replace(normalizedPrefix, '-', '')}${uniqueSuffix}', 24)
-var keyVaultName = take('${normalizedPrefix}-${uniqueSuffix}', 24)
 var logAnalyticsName = '${normalizedPrefix}-logs'
 var environmentName = '${normalizedPrefix}-env'
 var jobName = '${normalizedPrefix}-job'
@@ -135,14 +129,6 @@ var baseEnvironmentVariables = [
   {
     name: 'AZURE_TOKEN_CREDENTIALS'
     value: 'ManagedIdentityCredential'
-  }
-  {
-    name: 'KeyVault__VaultUri'
-    value: keyVault.properties.vaultUri
-  }
-  {
-    name: 'KeyVault__SomtodayClientSecretName'
-    value: somtodayClientSecretName
   }
   {
     name: 'Somtoday__ClientId'
@@ -205,23 +191,23 @@ var excludedLocationEnvironmentVariables = [for (locationCode, index) in exclude
   value: string(locationCode)
 }]
 
-var bootstrapEnvironmentVariables = empty(somtodayClientSecret) ? [] : [
+var secretEnvironmentVariables = [
   {
     name: 'Somtoday__ClientSecret'
-    secretRef: 'somtoday-client-secret-bootstrap'
+    secretRef: 'somtoday-client-secret'
   }
 ]
 
-var jobSecrets = empty(somtodayClientSecret) ? [] : [
+var jobSecrets = [
   {
-    name: 'somtoday-client-secret-bootstrap'
+    name: 'somtoday-client-secret'
     value: somtodayClientSecret
   }
 ]
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageAccountName
-  location: location
+  location: resourceGroup().location
   tags: tags
   sku: {
     name: 'Standard_LRS'
@@ -321,32 +307,9 @@ resource outputContainer 'Microsoft.Storage/storageAccounts/blobServices/contain
   }
 }
 
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: keyVaultName
-  location: location
-  tags: tags
-  properties: {
-    tenantId: tenant().tenantId
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
-    accessPolicies: []
-    enableRbacAuthorization: true
-    enableSoftDelete: true
-    softDeleteRetentionInDays: 90
-    enablePurgeProtection: true
-    publicNetworkAccess: 'Enabled'
-    networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Allow'
-    }
-  }
-}
-
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsName
-  location: location
+  location: resourceGroup().location
   tags: tags
   properties: {
     retentionInDays: 30
@@ -358,7 +321,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
 
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: environmentName
-  location: location
+  location: resourceGroup().location
   tags: tags
   properties: {
     appLogsConfiguration: {
@@ -373,7 +336,7 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01'
 
 resource scheduledJob 'Microsoft.App/jobs@2024-03-01' = {
   name: jobName
-  location: location
+  location: resourceGroup().location
   tags: tags
   identity: {
     type: 'SystemAssigned'
@@ -401,7 +364,7 @@ resource scheduledJob 'Microsoft.App/jobs@2024-03-01' = {
             schoolEnvironmentVariables,
             includedLocationEnvironmentVariables,
             excludedLocationEnvironmentVariables,
-            bootstrapEnvironmentVariables
+            secretEnvironmentVariables
           )
           resources: {
             cpu: json(cpu)
@@ -428,24 +391,7 @@ resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
-var keyVaultSecretsOfficerRoleId = subscriptionResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
-)
-
-resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, scheduledJob.id, keyVaultSecretsOfficerRoleId)
-  scope: keyVault
-  properties: {
-    principalId: scheduledJob.identity.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: keyVaultSecretsOfficerRoleId
-  }
-}
-
 output jobName string = scheduledJob.name
 output containerAppsEnvironmentName string = containerAppsEnvironment.name
 output storageAccountName string = storageAccount.name
 output blobContainerName string = outputContainer.name
-output keyVaultName string = keyVault.name
-output keyVaultUri string = keyVault.properties.vaultUri

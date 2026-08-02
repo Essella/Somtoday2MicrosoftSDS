@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.45.15.27210",
-      "templateHash": "14833949447606849872"
+      "templateHash": "18312946013417858489"
     }
   },
   "parameters": {
@@ -15,33 +15,26 @@
       "minLength": 3,
       "maxLength": 12,
       "metadata": {
-        "description": "Korte, unieke prefix voor alle resources. Gebruik alleen kleine letters, cijfers en koppeltekens."
-      }
-    },
-    "location": {
-      "type": "string",
-      "defaultValue": "[resourceGroup().location]",
-      "metadata": {
-        "description": "Azure-regio voor alle resources."
+        "description": "Korte prefix voor de namen van alle resources. Gebruik 3-12 kleine letters, cijfers of koppeltekens; standaard: somtodaysds."
       }
     },
     "imageReference": {
       "type": "string",
       "defaultValue": "ghcr.io/essella/somtoday2microsoftsds:latest",
       "metadata": {
-        "description": "Publieke GHCR-image inclusief tag of digest."
+        "description": "Containerimage uit GHCR, inclusief release-tag of digest. Gebruik in productie bij voorkeur een vaste tag of digest; standaard: latest."
       }
     },
     "cronExpression": {
       "type": "string",
-      "defaultValue": "0 1 * * *",
+      "defaultValue": "0 4,16 * * *",
       "metadata": {
-        "description": "Cron-expressie in UTC."
+        "description": "Cron-schema in UTC voor de Job. Standaard: dagelijks om 04:00 en 16:00 UTC (0 4,16 * * *)."
       }
     },
     "cpu": {
       "type": "string",
-      "defaultValue": "0.5",
+      "defaultValue": "0.25",
       "allowedValues": [
         "0.25",
         "0.5",
@@ -53,7 +46,7 @@
         "2.0"
       ],
       "metadata": {
-        "description": "CPU per jobreplica."
+        "description": "vCPU per Job-replica. Kies een ondersteunde waarde tussen 0.25 en 2.0; standaard: 0.25 vCPU."
       }
     },
     "memory": {
@@ -70,7 +63,7 @@
         "4Gi"
       ],
       "metadata": {
-        "description": "Geheugen per jobreplica."
+        "description": "Geheugen per Job-replica. Kies een ondersteunde waarde tussen 0.5 en 4 GiB; standaard: 1 GiB."
       }
     },
     "replicaTimeoutSeconds": {
@@ -79,7 +72,7 @@
       "minValue": 1,
       "maxValue": 3600,
       "metadata": {
-        "description": "Maximale looptijd per replica in seconden."
+        "description": "Maximale looptijd van één Job-replica in seconden (1-3600); standaard: 3600 seconden."
       }
     },
     "replicaRetryLimit": {
@@ -87,21 +80,21 @@
       "defaultValue": 1,
       "minValue": 0,
       "metadata": {
-        "description": "Aantal retries na een mislukte replica."
+        "description": "Aantal extra pogingen na een mislukte Job-replica; standaard: 1."
       }
     },
     "schoolUuids": {
       "type": "array",
       "minLength": 1,
       "metadata": {
-        "description": "Somtoday-school-UUIDs."
+        "description": "Verplicht: JSON-array met minstens één Somtoday-instellings-UUID. Voorbeeld: [\"11111111-1111-1111-1111-111111111111\"]."
       }
     },
     "somtodayClientId": {
       "type": "string",
       "minLength": 1,
       "metadata": {
-        "description": "Somtoday OAuth-client-ID."
+        "description": "Verplicht: OAuth-client-ID van Somtoday Connect."
       }
     },
     "somtodayEnvironment": {
@@ -113,91 +106,84 @@
         "ACCEPTATIE"
       ],
       "metadata": {
-        "description": "Somtoday-omgeving voor productie-infrastructuur: PROD, TEST of ACCEPTATIE."
+        "description": "Somtoday-omgeving: PROD, TEST of ACCEPTATIE; standaard: PROD."
       }
     },
     "somtodayClientSecret": {
       "type": "securestring",
-      "defaultValue": "",
+      "minLength": 1,
       "metadata": {
-        "description": "Optionele tijdelijke bootstrap- of rotatiewaarde. Deploy na succesvolle opslag opnieuw met een lege waarde."
-      }
-    },
-    "somtodayClientSecretName": {
-      "type": "string",
-      "defaultValue": "somtoday-client-secret",
-      "metadata": {
-        "description": "Naam van het Somtoday-secret in Key Vault."
+        "description": "Verplicht: OAuth-clientsecret van Somtoday Connect. Wordt veilig opgeslagen als secret van de Container Apps Job."
       }
     },
     "includedLocationCodes": {
       "type": "array",
       "defaultValue": [],
       "metadata": {
-        "description": "Alleen deze Somtoday-locatiecodes opnemen; leeg betekent alle locaties."
+        "description": "Optionele JSON-array met Somtoday-locatiecodes om op te nemen, bijvoorbeeld [\"LOC1\", \"LOC2\"]. Leeg betekent alle locaties."
       }
     },
     "excludedLocationCodes": {
       "type": "array",
       "defaultValue": [],
       "metadata": {
-        "description": "Deze Somtoday-locatiecodes uitsluiten."
+        "description": "Optionele JSON-array met Somtoday-locatiecodes om uit te sluiten. Uitsluiting heeft voorrang op opname."
       }
     },
     "enableGuardianSync": {
       "type": "bool",
       "defaultValue": false,
       "metadata": {
-        "description": "Genereer School Data Sync guardian-relaties."
+        "description": "Exporteer SDS-guardiangebruikers en -relaties; standaard: false."
       }
     },
     "teacherUsernameFormat": {
       "type": "string",
       "defaultValue": "Emailadres",
       "metadata": {
-        "description": "Gebruikersnaamformaat voor medewerkers."
+        "description": "Gebruikersnaamexpressie voor medewerkers; standaard: Emailadres."
       }
     },
     "studentUsernameFormat": {
       "type": "string",
       "defaultValue": "Emailadres",
       "metadata": {
-        "description": "Gebruikersnaamformaat voor leerlingen."
+        "description": "Gebruikersnaamexpressie voor leerlingen; standaard: Emailadres."
       }
     },
     "blobContainerName": {
       "type": "string",
       "defaultValue": "sds",
       "metadata": {
-        "description": "Blobcontainer voor de CSV-uitvoer."
+        "description": "Naam van de privé-Blobcontainer voor de CSV-uitvoer; standaard: sds."
       }
     },
     "outputFolder": {
       "type": "string",
       "defaultValue": "sds/output",
       "metadata": {
-        "description": "Virtuele map in de Blobcontainer."
+        "description": "Virtuele basismap in de Blobcontainer voor de uitvoer; standaard: sds/output."
       }
     },
     "generateEmptyCsv": {
       "type": "bool",
       "defaultValue": false,
       "metadata": {
-        "description": "Altijd lege CSV-bestanden genereren."
+        "description": "Genereer altijd SDS-bestanden met alleen headers; standaard: false."
       }
     },
     "separateByInstitution": {
       "type": "bool",
       "defaultValue": true,
       "metadata": {
-        "description": "Maak een afzonderlijke uitvoermap per Somtoday-instelling."
+        "description": "Maak een afzonderlijke uitvoermap per Somtoday-instelling; standaard: true."
       }
     },
     "separateByLocation": {
       "type": "bool",
       "defaultValue": false,
       "metadata": {
-        "description": "Maak een afzonderlijke uitvoermap per Somtoday-vestiging."
+        "description": "Maak een afzonderlijke uitvoermap per Somtoday-vestiging; standaard: false."
       }
     },
     "tags": {
@@ -206,7 +192,7 @@
         "application": "Somtoday2MicrosoftSDS"
       },
       "metadata": {
-        "description": "Tags voor alle resources die tags ondersteunen."
+        "description": "Optionele tags voor alle resources die tags ondersteunen."
       }
     }
   },
@@ -240,7 +226,6 @@
     "normalizedPrefix": "[toLower(parameters('namePrefix'))]",
     "uniqueSuffix": "[uniqueString(subscription().subscriptionId, resourceGroup().id)]",
     "storageAccountName": "[take(format('sds{0}{1}', replace(variables('normalizedPrefix'), '-', ''), variables('uniqueSuffix')), 24)]",
-    "keyVaultName": "[take(format('{0}-{1}', variables('normalizedPrefix'), variables('uniqueSuffix')), 24)]",
     "logAnalyticsName": "[format('{0}-logs', variables('normalizedPrefix'))]",
     "environmentName": "[format('{0}-env', variables('normalizedPrefix'))]",
     "jobName": "[format('{0}-job', variables('normalizedPrefix'))]",
@@ -248,17 +233,26 @@
     "slashNormalizedOutputFolder": "[replace(trim(parameters('outputFolder')), '\\', '/')]",
     "normalizedOutputFolderSegments": "[map(filter(split(variables('slashNormalizedOutputFolder'), '/'), lambda('segment', not(empty(trim(lambdaVariables('segment')))))), lambda('segment', trim(lambdaVariables('segment'))))]",
     "normalizedOutputFolder": "[if(and(and(not(empty(variables('normalizedOutputFolderSegments'))), not(contains(variables('normalizedOutputFolderSegments'), '.'))), not(contains(variables('normalizedOutputFolderSegments'), '..'))), join(variables('normalizedOutputFolderSegments'), '/'), fail('outputFolder must contain at least one segment and may not contain . or .. segments.'))]",
-    "bootstrapEnvironmentVariables": "[if(empty(parameters('somtodayClientSecret')), createArray(), createArray(createObject('name', 'Somtoday__ClientSecret', 'secretRef', 'somtoday-client-secret-bootstrap')))]",
-    "jobSecrets": "[if(empty(parameters('somtodayClientSecret')), createArray(), createArray(createObject('name', 'somtoday-client-secret-bootstrap', 'value', parameters('somtodayClientSecret'))))]",
-    "storageBlobDataContributorRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
-    "keyVaultSecretsOfficerRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')]"
+    "secretEnvironmentVariables": [
+      {
+        "name": "Somtoday__ClientSecret",
+        "secretRef": "somtoday-client-secret"
+      }
+    ],
+    "jobSecrets": [
+      {
+        "name": "somtoday-client-secret",
+        "value": "[parameters('somtodayClientSecret')]"
+      }
+    ],
+    "storageBlobDataContributorRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]"
   },
   "resources": [
     {
       "type": "Microsoft.Storage/storageAccounts",
       "apiVersion": "2023-05-01",
       "name": "[variables('storageAccountName')]",
-      "location": "[parameters('location')]",
+      "location": "[resourceGroup().location]",
       "tags": "[parameters('tags')]",
       "sku": {
         "name": "Standard_LRS"
@@ -367,34 +361,10 @@
       ]
     },
     {
-      "type": "Microsoft.KeyVault/vaults",
-      "apiVersion": "2023-07-01",
-      "name": "[variables('keyVaultName')]",
-      "location": "[parameters('location')]",
-      "tags": "[parameters('tags')]",
-      "properties": {
-        "tenantId": "[tenant().tenantId]",
-        "sku": {
-          "family": "A",
-          "name": "standard"
-        },
-        "accessPolicies": [],
-        "enableRbacAuthorization": true,
-        "enableSoftDelete": true,
-        "softDeleteRetentionInDays": 90,
-        "enablePurgeProtection": true,
-        "publicNetworkAccess": "Enabled",
-        "networkAcls": {
-          "bypass": "AzureServices",
-          "defaultAction": "Allow"
-        }
-      }
-    },
-    {
       "type": "Microsoft.OperationalInsights/workspaces",
       "apiVersion": "2023-09-01",
       "name": "[variables('logAnalyticsName')]",
-      "location": "[parameters('location')]",
+      "location": "[resourceGroup().location]",
       "tags": "[parameters('tags')]",
       "properties": {
         "retentionInDays": 30,
@@ -407,7 +377,7 @@
       "type": "Microsoft.App/managedEnvironments",
       "apiVersion": "2024-03-01",
       "name": "[variables('environmentName')]",
-      "location": "[parameters('location')]",
+      "location": "[resourceGroup().location]",
       "tags": "[parameters('tags')]",
       "properties": {
         "appLogsConfiguration": {
@@ -426,7 +396,7 @@
       "type": "Microsoft.App/jobs",
       "apiVersion": "2024-03-01",
       "name": "[variables('jobName')]",
-      "location": "[parameters('location')]",
+      "location": "[resourceGroup().location]",
       "tags": "[parameters('tags')]",
       "identity": {
         "type": "SystemAssigned"
@@ -449,7 +419,7 @@
             {
               "name": "[variables('containerName')]",
               "image": "[parameters('imageReference')]",
-              "env": "[concat(createArray(createObject('name', 'DOTNET_ENVIRONMENT', 'value', 'Production'), createObject('name', 'AZURE_TOKEN_CREDENTIALS', 'value', 'ManagedIdentityCredential'), createObject('name', 'KeyVault__VaultUri', 'value', reference(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), '2023-07-01').vaultUri), createObject('name', 'KeyVault__SomtodayClientSecretName', 'value', parameters('somtodayClientSecretName')), createObject('name', 'Somtoday__ClientId', 'value', parameters('somtodayClientId')), createObject('name', 'Somtoday__Environment', 'value', parameters('somtodayEnvironment')), createObject('name', 'Storage__AzureBlob__ServiceUri', 'value', reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.blob), createObject('name', 'Storage__AzureBlob__Container', 'value', parameters('blobContainerName')), createObject('name', 'Output__Folder', 'value', variables('normalizedOutputFolder')), createObject('name', 'Output__GenerateEmptyCsv', 'value', string(parameters('generateEmptyCsv'))), createObject('name', 'Output__SeparateByInstitution', 'value', string(parameters('separateByInstitution'))), createObject('name', 'Output__SeparateByLocation', 'value', string(parameters('separateByLocation'))), createObject('name', 'SchoolDataSync__EnableGuardianSync', 'value', string(parameters('enableGuardianSync'))), createObject('name', 'UsernameFormat__Teacher', 'value', parameters('teacherUsernameFormat')), createObject('name', 'UsernameFormat__Student', 'value', parameters('studentUsernameFormat'))), variables('schoolEnvironmentVariables'), variables('includedLocationEnvironmentVariables'), variables('excludedLocationEnvironmentVariables'), variables('bootstrapEnvironmentVariables'))]",
+              "env": "[concat(createArray(createObject('name', 'DOTNET_ENVIRONMENT', 'value', 'Production'), createObject('name', 'AZURE_TOKEN_CREDENTIALS', 'value', 'ManagedIdentityCredential'), createObject('name', 'Somtoday__ClientId', 'value', parameters('somtodayClientId')), createObject('name', 'Somtoday__Environment', 'value', parameters('somtodayEnvironment')), createObject('name', 'Storage__AzureBlob__ServiceUri', 'value', reference(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-05-01').primaryEndpoints.blob), createObject('name', 'Storage__AzureBlob__Container', 'value', parameters('blobContainerName')), createObject('name', 'Output__Folder', 'value', variables('normalizedOutputFolder')), createObject('name', 'Output__GenerateEmptyCsv', 'value', string(parameters('generateEmptyCsv'))), createObject('name', 'Output__SeparateByInstitution', 'value', string(parameters('separateByInstitution'))), createObject('name', 'Output__SeparateByLocation', 'value', string(parameters('separateByLocation'))), createObject('name', 'SchoolDataSync__EnableGuardianSync', 'value', string(parameters('enableGuardianSync'))), createObject('name', 'UsernameFormat__Teacher', 'value', parameters('teacherUsernameFormat')), createObject('name', 'UsernameFormat__Student', 'value', parameters('studentUsernameFormat'))), variables('schoolEnvironmentVariables'), variables('includedLocationEnvironmentVariables'), variables('excludedLocationEnvironmentVariables'), variables('secretEnvironmentVariables'))]",
               "resources": {
                 "cpu": "[json(parameters('cpu'))]",
                 "memory": "[parameters('memory')]"
@@ -460,7 +430,6 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
-        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
         "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
       ]
     },
@@ -476,21 +445,6 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', variables('storageAccountName'), 'default', parameters('blobContainerName'))]",
-        "[resourceId('Microsoft.App/jobs', variables('jobName'))]"
-      ]
-    },
-    {
-      "type": "Microsoft.Authorization/roleAssignments",
-      "apiVersion": "2022-04-01",
-      "scope": "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
-      "name": "[guid(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), resourceId('Microsoft.App/jobs', variables('jobName')), variables('keyVaultSecretsOfficerRoleId'))]",
-      "properties": {
-        "principalId": "[reference(resourceId('Microsoft.App/jobs', variables('jobName')), '2024-03-01', 'full').identity.principalId]",
-        "principalType": "ServicePrincipal",
-        "roleDefinitionId": "[variables('keyVaultSecretsOfficerRoleId')]"
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
         "[resourceId('Microsoft.App/jobs', variables('jobName'))]"
       ]
     }
@@ -511,14 +465,6 @@
     "blobContainerName": {
       "type": "string",
       "value": "[parameters('blobContainerName')]"
-    },
-    "keyVaultName": {
-      "type": "string",
-      "value": "[variables('keyVaultName')]"
-    },
-    "keyVaultUri": {
-      "type": "string",
-      "value": "[reference(resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName')), '2023-07-01').vaultUri]"
     }
   }
 }

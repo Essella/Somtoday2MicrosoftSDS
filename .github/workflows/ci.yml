@@ -104,7 +104,7 @@ jobs:
       - name: Validate Bicep
         run: |
           az bicep build --file infra/main.bicep --outfile "${{ runner.temp }}/main.json"
-          az bicep build-params --file infra/main.example.bicepparam --outfile "${{ runner.temp }}/main.parameters.json"
+          SOMTODAY_CLIENT_SECRET=validation-only-value az bicep build-params --file infra/main.example.bicepparam --outfile "${{ runner.temp }}/main.parameters.json"
 
           jq -e '
             .variables.slashNormalizedOutputFolder
@@ -116,7 +116,16 @@ jobs:
             and any(.resources[]; .type == "Microsoft.App/jobs"
               and (.properties.template.containers[]?.env
                 | contains("Output__Folder")
-                and contains("normalizedOutputFolder")))
+                and contains("normalizedOutputFolder")
+                and contains("Somtoday__ClientSecret")
+                and contains("somtoday-client-secret"))
+              and (.properties.configuration.secrets
+                | contains("somtoday-client-secret")))
+            and (any(.resources[]; .type | startswith("Microsoft.KeyVault/")) | not)
+            and (any(.resources[]; .type == "Microsoft.Authorization/roleAssignments"
+              and (.properties.roleDefinitionId | contains("b86a8fe4-44ce-4948-aee5-eccb2c155cd7"))) | not)
+            and .parameters.somtodayClientSecret.type == "secureString"
+            and .parameters.somtodayClientSecret.minLength == 1
             and any(.resources[]; .type == "Microsoft.Storage/storageAccounts"
               and .kind == "StorageV2"
               and .properties.allowSharedKeyAccess == false

@@ -57,6 +57,7 @@ If Azure CLI with Bicep is installed:
 ```powershell
 az bicep version
 az bicep build --file infra/main.bicep --outfile infra/azuredeploy.json
+# Set SOMTODAY_CLIENT_SECRET to a locally supplied value before compiling the parameter file.
 az bicep build-params --file infra/main.example.bicepparam --outfile "$env:TEMP/somtoday2microsoftsds.parameters.json"
 ```
 
@@ -93,4 +94,4 @@ Do not change `Somtoday2MicrosoftSDS/OpenAPIs/openapi.json` or generated `openap
 
 ## Change validation
 
-Add or update tests for behavioral changes. Preserve cancellation for HTTP, retry, Key Vault, and Blob operations. Keep logs and test data free of secrets, authentication bodies, personal data, and production CSV content. Report tests not run and areas not inspected.
+Add or update tests for behavioral changes. Preserve cancellation for HTTP, retry, and Blob operations. Keep logs and test data free of secrets, authentication bodies, personal data, and production CSV content. Report tests not run and areas not inspected.
