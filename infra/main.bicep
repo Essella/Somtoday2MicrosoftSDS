@@ -37,7 +37,7 @@ param cpu string = '0.25'
 ])
 param memory string = '1Gi'
 
-@description('Maximale looptijd van één Job-replica in seconden (1-3600); standaard: 3600 seconden.')
+@description('Maximale looptijd van een Job-replica in seconden (1-3600); standaard: 3600 seconden.')
 @minValue(1)
 @maxValue(3600)
 param replicaTimeoutSeconds int = 3600
@@ -46,7 +46,7 @@ param replicaTimeoutSeconds int = 3600
 @minValue(0)
 param replicaRetryLimit int = 1
 
-@description('Verplicht: JSON-array met minstens één Somtoday-instellings-UUID. Voorbeeld: ["11111111-1111-1111-1111-111111111111"]. Voorbeeld met twee instellingen: ["11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"].')
+@description('Verplicht: JSON-array met minimaal een Somtoday-instellings-UUID. Voorbeeld met een item: [&quot;11111111-1111-1111-1111-111111111111&quot;]. Voorbeeld met twee items: [&quot;11111111-1111-1111-1111-111111111111&quot;, &quot;22222222-2222-2222-2222-222222222222&quot;].')
 @minLength(1)
 param schoolUuids array
 
@@ -67,10 +67,10 @@ param somtodayEnvironment string = 'PROD'
 @minLength(1)
 param somtodayClientSecret string
 
-@description('Optionele JSON-array met Somtoday-locatiecodes om op te nemen, bijvoorbeeld ["LOC1", "LOC2"]. Leeg betekent alle locaties.')
+@description('Optionele JSON-array met op te nemen locatiecodes. Voorbeeld: [&quot;LOC1&quot;, &quot;LOC2&quot;]. Leeg betekent alle locaties.')
 param includedLocationCodes array = []
 
-@description('Optionele JSON-array met Somtoday-locatiecodes om uit te sluiten. Uitsluiting heeft voorrang op opname.')
+@description('Optionele JSON-array met uit te sluiten locatiecodes. Voorbeeld: [&quot;LOC1&quot;, &quot;LOC2&quot;]. Uitsluiting heeft voorrang op opname.')
 param excludedLocationCodes array = []
 
 @description('Exporteer SDS-guardiangebruikers en -relaties; standaard: false.')
@@ -82,7 +82,7 @@ param teacherUsernameFormat string = 'Emailadres'
 @description('Gebruikersnaamexpressie voor leerlingen; standaard: Emailadres.')
 param studentUsernameFormat string = 'Emailadres'
 
-@description('Naam van de privé-Blobcontainer voor de CSV-uitvoer; standaard: sds.')
+@description('Naam van de prive Blobcontainer voor de CSV-uitvoer; standaard: sds.')
 param blobContainerName string = 'sds'
 
 @description('Virtuele basismap in de Blobcontainer voor de uitvoer; standaard: sds/output.')
@@ -96,11 +96,6 @@ param separateByInstitution bool = true
 
 @description('Maak een afzonderlijke uitvoermap per Somtoday-vestiging; standaard: false.')
 param separateByLocation bool = false
-
-@description('Optionele tags voor alle resources die tags ondersteunen.')
-param tags object = {
-  application: 'Somtoday2MicrosoftSDS'
-}
 
 var normalizedPrefix = toLower(namePrefix)
 var uniqueSuffix = uniqueString(subscription().subscriptionId, resourceGroup().id)
@@ -208,7 +203,7 @@ var jobSecrets = [
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageAccountName
   location: resourceGroup().location
-  tags: tags
+  tags: resourceGroup().tags
   sku: {
     name: 'Standard_LRS'
   }
@@ -310,7 +305,7 @@ resource outputContainer 'Microsoft.Storage/storageAccounts/blobServices/contain
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsName
   location: resourceGroup().location
-  tags: tags
+  tags: resourceGroup().tags
   properties: {
     retentionInDays: 30
     features: {
@@ -322,7 +317,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: environmentName
   location: resourceGroup().location
-  tags: tags
+  tags: resourceGroup().tags
   properties: {
     appLogsConfiguration: {
       destination: 'log-analytics'
@@ -337,7 +332,7 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01'
 resource scheduledJob 'Microsoft.App/jobs@2024-03-01' = {
   name: jobName
   location: resourceGroup().location
-  tags: tags
+  tags: resourceGroup().tags
   identity: {
     type: 'SystemAssigned'
   }

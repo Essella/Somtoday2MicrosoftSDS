@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.45.15.27210",
-      "templateHash": "18312946013417858489"
+      "templateHash": "4624636493394690607"
     }
   },
   "parameters": {
@@ -27,9 +27,9 @@
     },
     "cronExpression": {
       "type": "string",
-      "defaultValue": "0 4,16 * * *",
+      "defaultValue": "0 3,15 * * *",
       "metadata": {
-        "description": "Cron-schema in UTC voor de Job. Standaard: dagelijks om 04:00 en 16:00 UTC (0 4,16 * * *)."
+        "description": "Cron-schema in UTC voor de Job. Standaard: dagelijks om 03:00 en 15:00 UTC (0 3,15 * * *). Dat betekent 04:00 en 16:00 in Nederland (CET/CEST)."
       }
     },
     "cpu": {
@@ -72,7 +72,7 @@
       "minValue": 1,
       "maxValue": 3600,
       "metadata": {
-        "description": "Maximale looptijd van één Job-replica in seconden (1-3600); standaard: 3600 seconden."
+        "description": "Maximale looptijd van een Job-replica in seconden (1-3600); standaard: 3600 seconden."
       }
     },
     "replicaRetryLimit": {
@@ -87,7 +87,7 @@
       "type": "array",
       "minLength": 1,
       "metadata": {
-        "description": "Verplicht: JSON-array met minstens één Somtoday-instellings-UUID. Voorbeeld: [\"11111111-1111-1111-1111-111111111111\"]."
+        "description": "Verplicht: JSON-array met minimaal een Somtoday-instellings-UUID. Voorbeeld met een item: [&quot;11111111-1111-1111-1111-111111111111&quot;]. Voorbeeld met twee items: [&quot;11111111-1111-1111-1111-111111111111&quot;, &quot;22222222-2222-2222-2222-222222222222&quot;]."
       }
     },
     "somtodayClientId": {
@@ -120,14 +120,14 @@
       "type": "array",
       "defaultValue": [],
       "metadata": {
-        "description": "Optionele JSON-array met Somtoday-locatiecodes om op te nemen, bijvoorbeeld [\"LOC1\", \"LOC2\"]. Leeg betekent alle locaties."
+        "description": "Optionele JSON-array met op te nemen locatiecodes. Voorbeeld: [&quot;LOC1&quot;, &quot;LOC2&quot;]. Leeg betekent alle locaties."
       }
     },
     "excludedLocationCodes": {
       "type": "array",
       "defaultValue": [],
       "metadata": {
-        "description": "Optionele JSON-array met Somtoday-locatiecodes om uit te sluiten. Uitsluiting heeft voorrang op opname."
+        "description": "Optionele JSON-array met uit te sluiten locatiecodes. Voorbeeld: [&quot;LOC1&quot;, &quot;LOC2&quot;]. Uitsluiting heeft voorrang op opname."
       }
     },
     "enableGuardianSync": {
@@ -155,7 +155,7 @@
       "type": "string",
       "defaultValue": "sds",
       "metadata": {
-        "description": "Naam van de privé-Blobcontainer voor de CSV-uitvoer; standaard: sds."
+        "description": "Naam van de prive Blobcontainer voor de CSV-uitvoer; standaard: sds."
       }
     },
     "outputFolder": {
@@ -184,15 +184,6 @@
       "defaultValue": false,
       "metadata": {
         "description": "Maak een afzonderlijke uitvoermap per Somtoday-vestiging; standaard: false."
-      }
-    },
-    "tags": {
-      "type": "object",
-      "defaultValue": {
-        "application": "Somtoday2MicrosoftSDS"
-      },
-      "metadata": {
-        "description": "Optionele tags voor alle resources die tags ondersteunen."
       }
     }
   },
@@ -253,7 +244,7 @@
       "apiVersion": "2023-05-01",
       "name": "[variables('storageAccountName')]",
       "location": "[resourceGroup().location]",
-      "tags": "[parameters('tags')]",
+      "tags": "[resourceGroup().tags]",
       "sku": {
         "name": "Standard_LRS"
       },
@@ -365,7 +356,7 @@
       "apiVersion": "2023-09-01",
       "name": "[variables('logAnalyticsName')]",
       "location": "[resourceGroup().location]",
-      "tags": "[parameters('tags')]",
+      "tags": "[resourceGroup().tags]",
       "properties": {
         "retentionInDays": 30,
         "features": {
@@ -378,7 +369,7 @@
       "apiVersion": "2024-03-01",
       "name": "[variables('environmentName')]",
       "location": "[resourceGroup().location]",
-      "tags": "[parameters('tags')]",
+      "tags": "[resourceGroup().tags]",
       "properties": {
         "appLogsConfiguration": {
           "destination": "log-analytics",
@@ -397,7 +388,7 @@
       "apiVersion": "2024-03-01",
       "name": "[variables('jobName')]",
       "location": "[resourceGroup().location]",
-      "tags": "[parameters('tags')]",
+      "tags": "[resourceGroup().tags]",
       "identity": {
         "type": "SystemAssigned"
       },

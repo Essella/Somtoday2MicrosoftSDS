@@ -21,6 +21,8 @@ Defaults are public `latest` image, `0 4,16 * * *` UTC schedule (04:00 and 16:00
 
 All resources use the region of the selected resource group. The Azure Portal already supplies that standard **Region** field, so the template no longer displays a separate location parameter with the unevaluated `resourceGroup().location` expression.
 
+Resources that support tags receive the native tags of the selected resource group. Manage those tags on the resource group in Azure Portal; the template has no separate tags parameter.
+
 Output is separated by institution by default and combines selected locations within each institution. The `separateByInstitution` and `separateByLocation` deployment parameters map to the application's independent output-layout settings.
 
 ## Blob versions, retention, and run overlap
