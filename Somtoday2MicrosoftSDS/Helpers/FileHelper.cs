@@ -36,7 +36,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                     sdsCsv.Guardianrelationship));
             }
 
-            return new PublicationDataset(SdsDatasetFormat.V1, files);
+            return new PublicationDataset(SdsDatasetFormat.V1, files, includeGuardianSync);
         }
 
         internal PublicationDataset CreateEmptyV1Dataset(bool includeGuardianSync)
@@ -63,7 +63,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                     sdsCsv.Relationships));
             }
 
-            return new PublicationDataset(SdsDatasetFormat.V2Rev1, files);
+            return new PublicationDataset(SdsDatasetFormat.V2Rev1, files, includeGuardianSync);
         }
 
         internal PublicationDataset CreateEmptyV2Dataset(bool includeGuardianSync)

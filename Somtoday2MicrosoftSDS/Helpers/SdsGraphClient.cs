@@ -299,8 +299,17 @@ internal sealed class SdsGraphClient
         string[] coreNames = dataset.Format == SdsDatasetFormat.V1
             ? ["School.csv", "Section.csv", "Teacher.csv", "Student.csv", "TeacherRoster.csv", "StudentEnrollment.csv"]
             : ["orgs.csv", "users.csv", "roles.csv", "classes.csv", "enrollments.csv"];
+        string[] guardianNames = dataset.IncludesGuardians
+            ? dataset.Format == SdsDatasetFormat.V1
+                ? ["User.csv", "Guardianrelationship.csv"]
+                : ["relationships.csv"]
+            : [];
+
         HashSet<string> names = dataset.Files.Select(file => file.Name).ToHashSet(StringComparer.Ordinal);
-        if (names.Count != dataset.Files.Count || coreNames.Any(name => !names.Contains(name)))
+        HashSet<string> expectedNames = coreNames
+            .Concat(guardianNames)
+            .ToHashSet(StringComparer.Ordinal);
+        if (names.Count != dataset.Files.Count || !names.SetEquals(expectedNames))
         {
             throw new SdsPublicationException("The SDS dataset does not contain one complete file set");
         }

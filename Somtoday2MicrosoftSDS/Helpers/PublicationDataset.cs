@@ -10,4 +10,5 @@ internal sealed record PublicationFile(string Name, BinaryData Content);
 
 internal sealed record PublicationDataset(
     SdsDatasetFormat Format,
-    IReadOnlyList<PublicationFile> Files);
+    IReadOnlyList<PublicationFile> Files,
+    bool IncludesGuardians);

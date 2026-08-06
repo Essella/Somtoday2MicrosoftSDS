@@ -10,6 +10,7 @@ None.
 
 | ID | Resolved | Resolution |
 |---|---|---|
+| `DEV-027` | 2026-08-06 | Publication now carries guardian-set state and rejects a dataset that does not contain exactly the required core and guardian files before requesting an SDS upload session. |
 | `DEV-026` | 2026-08-06 | Permanent Blob publication and Power Automate handoff were replaced by one connector-selected complete dataset uploaded directly through a fresh Graph SDS SAS session and followed by connector validation. Deployment now creates one system-identity Job per inbound flow and can reuse an existing ACA environment. |
 | `DEV-022` | 2026-08-02 | Staging now uses one shared `{Output:Folder}/.staging/{RunId}/{FileName}` root, reserves `.staging` as the first live segment, retains legacy cleanup recognition, excludes staging from rollback, and has bounded base/version lifecycle retention without tags. |
 | `DEV-023` | 2026-08-02 | Central CSV serialization now rejects CR and LF in every actively mapped string field before staging, with a safe SDS-version/file/column-only error. |

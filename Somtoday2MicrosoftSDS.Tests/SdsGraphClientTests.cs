@@ -135,6 +135,44 @@ public sealed class SdsGraphClientTests
         Assert.DoesNotContain(graph.Requests, request => request.Method == HttpMethod.Post);
     }
 
+    [Fact]
+    public async Task GuardianEnabledV1DatasetRequiresBothGuardianFilesBeforeUpload()
+    {
+        CaptureHandler graph = new(_ => throw new InvalidOperationException());
+        CaptureHandler uploads = new(_ => throw new InvalidOperationException());
+        PublicationDataset dataset = new(
+            SdsDatasetFormat.V1,
+            new FileHelper().CreateEmptyV1Dataset(includeGuardianSync: false).Files,
+            IncludesGuardians: true);
+
+        await Assert.ThrowsAsync<SdsPublicationException>(() => Client(graph, uploads).UploadAndValidateAsync(
+            ConnectorId,
+            dataset,
+            CancellationToken.None));
+
+        Assert.Empty(graph.Requests);
+        Assert.Empty(uploads.Requests);
+    }
+
+    [Fact]
+    public async Task GuardianEnabledV2DatasetRequiresRelationshipsFileBeforeUpload()
+    {
+        CaptureHandler graph = new(_ => throw new InvalidOperationException());
+        CaptureHandler uploads = new(_ => throw new InvalidOperationException());
+        PublicationDataset dataset = new(
+            SdsDatasetFormat.V2Rev1,
+            new FileHelper().CreateEmptyV2Dataset(includeGuardianSync: false).Files,
+            IncludesGuardians: true);
+
+        await Assert.ThrowsAsync<SdsPublicationException>(() => Client(graph, uploads).UploadAndValidateAsync(
+            ConnectorId,
+            dataset,
+            CancellationToken.None));
+
+        Assert.Empty(graph.Requests);
+        Assert.Empty(uploads.Requests);
+    }
+
     [Theory]
     [InlineData("{}")]
     [InlineData("{\"sessionUrl\":\"http://storage.test/container?sig=secret\"}")]
