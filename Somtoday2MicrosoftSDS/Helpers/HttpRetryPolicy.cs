@@ -22,7 +22,8 @@ internal sealed class HttpRetryPolicy
     internal async Task<HttpResponseMessage> SendAsync(
         HttpClient client,
         Func<HttpRequestMessage> requestFactory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? minimumRetryDelay = null)
     {
         for (int attempt = 1; ; attempt++)
         {
@@ -40,7 +41,7 @@ internal sealed class HttpRetryPolicy
                     return response;
                 }
 
-                TimeSpan delay = GetRetryDelay(response);
+                TimeSpan delay = GetRetryDelay(response, minimumRetryDelay);
                 response.Dispose();
                 await _delayAsync(delay, cancellationToken);
             }
@@ -50,7 +51,7 @@ internal sealed class HttpRetryPolicy
             }
             catch (Exception ex) when (attempt < _totalAttempts && IsTransient(ex))
             {
-                await _delayAsync(_defaultDelay, cancellationToken);
+                await _delayAsync(ApplyMinimumDelay(_defaultDelay, minimumRetryDelay), cancellationToken);
             }
         }
     }
@@ -67,11 +68,11 @@ internal sealed class HttpRetryPolicy
             or TaskCanceledException;
     }
 
-    private TimeSpan GetRetryDelay(HttpResponseMessage response)
+    private TimeSpan GetRetryDelay(HttpResponseMessage response, TimeSpan? minimumRetryDelay)
     {
         if (response.Headers.RetryAfter?.Delta is TimeSpan delta && delta >= TimeSpan.Zero)
         {
-            return delta;
+            return ApplyMinimumDelay(delta, minimumRetryDelay);
         }
 
         if (response.Headers.RetryAfter?.Date is DateTimeOffset retryAt)
@@ -79,10 +80,17 @@ internal sealed class HttpRetryPolicy
             TimeSpan delay = retryAt - DateTimeOffset.UtcNow;
             if (delay > TimeSpan.Zero)
             {
-                return delay;
+                return ApplyMinimumDelay(delay, minimumRetryDelay);
             }
         }
 
-        return _defaultDelay;
+        return ApplyMinimumDelay(_defaultDelay, minimumRetryDelay);
+    }
+
+    private static TimeSpan ApplyMinimumDelay(TimeSpan delay, TimeSpan? minimumRetryDelay)
+    {
+        return minimumRetryDelay is TimeSpan minimum && delay < minimum
+            ? minimum
+            : delay;
     }
 }

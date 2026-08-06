@@ -31,11 +31,17 @@ namespace Somtoday2MicrosoftSDS.Helpers
 
         internal bool ValidateUsernameFormat()
         {
+            return ValidateUsernameFormats(
+                OutputFormatUsernameTeacher,
+                OutputFormatUsernameStudent);
+        }
+
+        internal bool ValidateUsernameFormats(string teacherFormat, string studentFormat)
+        {
             bool success = true;
-            Medewerker medewerkerUser = new Medewerker() { Emailadres = "testnaam" };
             try
             {
-                ReplaceTeacherUserProperty(OutputFormatUsernameTeacher, medewerkerUser);
+                CompileTeacherFormatter(teacherFormat);
             }
             catch (Exception ex)
             {
@@ -45,11 +51,9 @@ namespace Somtoday2MicrosoftSDS.Helpers
                     SafeExceptionSummary.Create(ex));
             }
 
-            Leerling leerlingUser = new Leerling() { Emailadres = "testnaam" };
-
             try
             {
-                ReplaceStudentUserProperty(OutputFormatUsernameStudent, leerlingUser);
+                CompileStudentFormatter(studentFormat);
             }
             catch (Exception ex)
             {
@@ -82,11 +86,22 @@ namespace Somtoday2MicrosoftSDS.Helpers
             return StudentFormatterCache.GetOrAdd(value, CreateFormatter<Leerling>)(userobj);
         }
 
+        private static void CompileTeacherFormatter(string value)
+        {
+            _ = TeacherFormatterCache.GetOrAdd(value, CreateFormatter<Medewerker>);
+        }
+
+        private static void CompileStudentFormatter(string value)
+        {
+            _ = StudentFormatterCache.GetOrAdd(value, CreateFormatter<Leerling>);
+        }
+
         private static Func<TUser, string> CreateFormatter<TUser>(string format)
         {
             MatchCollection matches = TemplateExpressionRegex().Matches(format);
             if (matches.Count == 0)
             {
+                EnsureLiteralHasNoBraces(format);
                 return _ => format;
             }
 
@@ -98,6 +113,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                 if (match.Index > currentIndex)
                 {
                     string literal = format[currentIndex..match.Index];
+                    EnsureLiteralHasNoBraces(literal);
                     segments.Add(_ => literal);
                 }
 
@@ -109,6 +125,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
             if (currentIndex < format.Length)
             {
                 string literal = format[currentIndex..];
+                EnsureLiteralHasNoBraces(literal);
                 segments.Add(_ => literal);
             }
 
@@ -124,6 +141,14 @@ namespace Somtoday2MicrosoftSDS.Helpers
             };
         }
 
+        private static void EnsureLiteralHasNoBraces(string literal)
+        {
+            if (literal.IndexOfAny(['{', '}']) >= 0)
+            {
+                throw new FormatException("Username template contains an unmatched brace");
+            }
+        }
+
         private static Func<TUser, string> CreateExpressionAccessor<TUser>(string expression)
         {
             ParameterExpression parameter = Expression.Parameter(typeof(TUser), "user");
@@ -136,7 +161,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
 
         internal static string NormalizeFormat(string configuredValue)
         {
-            if (configuredValue.StartsWith("{user.", StringComparison.Ordinal) && configuredValue.EndsWith('}'))
+            if (configuredValue.IndexOfAny(['{', '}']) >= 0)
             {
                 return configuredValue;
             }

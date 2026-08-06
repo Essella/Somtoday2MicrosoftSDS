@@ -82,8 +82,8 @@ Validation errors and warnings can contain source detail. Log only safe counts a
 
 ## Retry, timeout, and failure behavior
 
-Graph calls, SAS uploads, and validation polls get at most four total HTTP attempts per request. Retry only network/HTTP timeout failures, HTTP 408, HTTP 429, and HTTP 5xx. Do not retry other 4xx, redirects, malformed payloads, or protocol failures.
+Graph calls, SAS uploads, and validation polls get at most four total HTTP attempts per request. The Graph and SAS clients do not follow redirects. Treat every 3xx response as a permanent protocol failure. Retry only network/HTTP timeout failures, HTTP 408, HTTP 429, and HTTP 5xx. Do not retry other 4xx, malformed payloads, or protocol failures.
 
-Before a retry, use `Retry-After` as either delta-seconds or an HTTP date. Without a valid value, wait two seconds. Every request and delay preserves application cancellation. The thirty-minute validation deadline also cancels polling and retry delays.
+Before a retry, use `Retry-After` as either delta-seconds or an HTTP date. Without a valid value, wait two seconds, except during validation polling. Consecutive validation polling attempts remain at least five seconds apart: use five seconds when `Retry-After` is missing or shorter, and retain a longer value. Every request and delay preserves application cancellation. The thirty-minute validation deadline also cancels polling and retry delays.
 
 Connector, upload-session, file-upload, validation-start, validation-poll, timeout, and cancellation failures produce process exit code `1`. Safe logs may contain endpoint operation names, file names, attempt counts, numeric HTTP status, connector/inbound-flow identifiers, and exception types; they must not contain authorization headers, access tokens, Somtoday secrets, SAS material, response bodies, CSV values, or personal identifiers.

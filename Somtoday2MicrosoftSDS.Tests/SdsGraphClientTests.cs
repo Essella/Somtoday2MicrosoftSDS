@@ -51,6 +51,7 @@ public sealed class SdsGraphClientTests
 
     [Theory]
     [InlineData("{}")]
+    [InlineData("{\"id\":\"00000000-0000-0000-0000-000000000000\",\"@odata.type\":\"#microsoft.graph.industryData.azureDataLakeConnector\",\"fileFormat\":{\"code\":\"schoolDataSyncV1\"}}")]
     [InlineData("{\"id\":\"not-a-guid\",\"@odata.type\":\"#microsoft.graph.industryData.azureDataLakeConnector\",\"fileFormat\":{\"code\":\"schoolDataSyncV1\"}}")]
     [InlineData("{\"id\":\"22222222-2222-2222-2222-222222222222\",\"@odata.type\":\"#microsoft.graph.industryData.otherConnector\",\"fileFormat\":{\"code\":\"schoolDataSyncV1\"}}")]
     public async Task RejectsMalformedConnectorResponses(string json)
@@ -61,6 +62,20 @@ public sealed class SdsGraphClientTests
 
         await Assert.ThrowsAsync<SdsPublicationException>(
             () => client.GetConnectorAsync(FlowId, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Found)]
+    [InlineData(HttpStatusCode.TemporaryRedirect)]
+    public async Task GraphRedirectIsAPermanentProtocolFailure(HttpStatusCode status)
+    {
+        CaptureHandler graph = new(_ => Response(status, "https://redirected.example/graph"));
+        SdsGraphClient client = Client(graph, new CaptureHandler(_ => throw new InvalidOperationException()));
+
+        await Assert.ThrowsAsync<SdsPublicationException>(
+            () => client.GetConnectorAsync(FlowId, CancellationToken.None));
+
+        Assert.Single(graph.Requests);
     }
 
     [Fact]
@@ -124,6 +139,26 @@ public sealed class SdsGraphClientTests
             HttpStatusCode.OK,
             "{\"sessionUrl\":\"https://temporary.blob.core.windows.net/container?sig=secret\"}"));
         CaptureHandler uploads = new(_ => Response(HttpStatusCode.BadRequest));
+        SdsGraphClient client = Client(graph, uploads);
+
+        await Assert.ThrowsAsync<SdsPublicationException>(() => client.UploadAndValidateAsync(
+            ConnectorId,
+            new FileHelper().CreateEmptyV1Dataset(false),
+            CancellationToken.None));
+
+        Assert.Single(uploads.Requests);
+        Assert.DoesNotContain(graph.Requests, request => request.Method == HttpMethod.Post);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Found)]
+    [InlineData(HttpStatusCode.TemporaryRedirect)]
+    public async Task SasRedirectStopsBeforeValidation(HttpStatusCode status)
+    {
+        CaptureHandler graph = new(_ => Json(
+            HttpStatusCode.OK,
+            "{\"sessionUrl\":\"https://temporary.blob.core.windows.net/container?sig=secret\"}"));
+        CaptureHandler uploads = new(_ => Response(status, "https://redirected.example/upload"));
         SdsGraphClient client = Client(graph, uploads);
 
         await Assert.ThrowsAsync<SdsPublicationException>(() => client.UploadAndValidateAsync(
@@ -298,11 +333,67 @@ public sealed class SdsGraphClientTests
         using HttpResponseMessage response = await policy.SendAsync(
             new HttpClient(handler),
             () => new HttpRequestMessage(HttpMethod.Put, "https://example.test/file"),
-            CancellationToken.None);
+            CancellationToken.None,
+            TimeSpan.FromSeconds(5));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.Equal(2, handler.Requests.Count);
         Assert.Equal([TimeSpan.FromSeconds(7)], delays);
+    }
+
+    [Fact]
+    public async Task ValidationPollRetryNeverWaitsLessThanFiveSeconds()
+    {
+        int pollAttempts = 0;
+        List<TimeSpan> delays = [];
+        CaptureHandler graph = new(request => request.RequestUri.AbsolutePath switch
+        {
+            var path when path.EndsWith("/getUploadSession", StringComparison.Ordinal) => Json(
+                HttpStatusCode.OK,
+                "{\"sessionUrl\":\"https://storage.test/container?sig=secret\"}"),
+            var path when path.EndsWith("/validate", StringComparison.Ordinal) => Response(
+                HttpStatusCode.Accepted,
+                "https://graph.microsoft.com/beta/external/industryData/operations/operation-id"),
+            var path when path.Contains("/operations/", StringComparison.Ordinal) => PollResponse(),
+            _ => throw new InvalidOperationException(request.RequestUri.AbsoluteUri)
+        });
+        HttpRetryPolicy retryPolicy = new(delayAsync: (delay, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            delays.Add(delay);
+            return Task.CompletedTask;
+        });
+        SdsGraphClient client = new(
+            new HttpClient(graph),
+            new HttpClient(new CaptureHandler(_ => Response(HttpStatusCode.Created))),
+            new StaticTokenCredential(),
+            retryPolicy,
+            delayAsync: (delay, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                delays.Add(delay);
+                return Task.CompletedTask;
+            });
+
+        await client.UploadAndValidateAsync(
+            ConnectorId,
+            new FileHelper().CreateEmptyV1Dataset(false),
+            CancellationToken.None);
+
+        Assert.Equal([TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5)], delays);
+        Assert.Equal(2, pollAttempts);
+
+        HttpResponseMessage PollResponse()
+        {
+            if (++pollAttempts == 1)
+            {
+                HttpResponseMessage response = Response(HttpStatusCode.TooManyRequests);
+                response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.Zero);
+                return response;
+            }
+
+            return Json(HttpStatusCode.OK, "{\"status\":\"succeeded\"}");
+        }
     }
 
     [Fact]

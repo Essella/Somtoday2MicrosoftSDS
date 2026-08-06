@@ -30,9 +30,9 @@ internal sealed record SyncConfiguration(
 
         foreach (string configuredSchoolUuid in configuredSchoolUuids)
         {
-            if (!Guid.TryParse(configuredSchoolUuid, out Guid schoolUuid))
+            if (!Guid.TryParse(configuredSchoolUuid, out Guid schoolUuid) || schoolUuid == Guid.Empty)
             {
-                validationErrors.Add($"Somtoday:SchoolUUID contains an invalid UUID: '{configuredSchoolUuid}'");
+                validationErrors.Add($"Somtoday:SchoolUUID contains an invalid or empty UUID: '{configuredSchoolUuid}'");
             }
             else if (!uniqueSchoolUuids.Add(schoolUuid))
             {
@@ -45,9 +45,9 @@ internal sealed record SyncConfiguration(
         }
 
         string configuredInboundFlowId = configuration["SchoolDataSync:InboundFlowId"];
-        if (!Guid.TryParse(configuredInboundFlowId, out Guid inboundFlowId))
+        if (!Guid.TryParse(configuredInboundFlowId, out Guid inboundFlowId) || inboundFlowId == Guid.Empty)
         {
-            validationErrors.Add("SchoolDataSync:InboundFlowId must be a valid UUID");
+            validationErrors.Add("SchoolDataSync:InboundFlowId must be a valid non-empty UUID");
         }
 
         string clientId = configuration["Somtoday:ClientId"];

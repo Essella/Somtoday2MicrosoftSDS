@@ -71,9 +71,9 @@ internal sealed class SdsGraphClient
             throw new SdsPublicationException("The inbound flow data connector is not an azureDataLakeConnector");
         }
 
-        if (!Guid.TryParse(RequiredString(root, "id"), out Guid connectorId))
+        if (!Guid.TryParse(RequiredString(root, "id"), out Guid connectorId) || connectorId == Guid.Empty)
         {
-            throw new SdsPublicationException("The SDS data connector returned an invalid connector ID");
+            throw new SdsPublicationException("The SDS data connector returned an invalid or empty connector ID");
         }
 
         if (!root.TryGetProperty("fileFormat", out JsonElement fileFormat))
@@ -217,7 +217,8 @@ internal sealed class SdsGraphClient
                 await _delayAsync(ValidationPollInterval, pollCancellationToken);
                 using HttpResponseMessage response = await SendGraphAsync(
                     () => new HttpRequestMessage(HttpMethod.Get, location),
-                    pollCancellationToken);
+                    pollCancellationToken,
+                    ValidationPollInterval);
                 RequireStatus(response, HttpStatusCode.OK, "poll SDS validation");
 
                 using JsonDocument document = await JsonDocument.ParseAsync(
@@ -248,7 +249,8 @@ internal sealed class SdsGraphClient
 
     private async Task<HttpResponseMessage> SendGraphAsync(
         Func<HttpRequestMessage> requestFactory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? minimumRetryDelay = null)
     {
         AccessToken token = await _credential.GetTokenAsync(
             new TokenRequestContext([GraphScope]),
@@ -261,7 +263,8 @@ internal sealed class SdsGraphClient
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
                 return request;
             },
-            cancellationToken);
+            cancellationToken,
+            minimumRetryDelay);
     }
 
     private Uri GraphUri(string relativePath)

@@ -8,7 +8,7 @@
 | `Somtoday__ClientId` | Required |
 | `Somtoday__ClientSecret` | Required; use the Job secret or Development User Secrets |
 | `Somtoday__Environment` | `PROD` by default; `TEST` and `ACCEPTATIE` supported; `NIGHTLY` Development-only |
-| `SchoolDataSync__InboundFlowId` | Required UUID of exactly one SDS inbound flow |
+| `SchoolDataSync__InboundFlowId` | Required non-empty UUID of exactly one SDS inbound flow |
 | `Locations__IncludedLocationCodes__0` and higher | Optional; empty means all locations |
 | `Locations__ExcludedLocationCodes__0` and higher | Optional; exclusion wins |
 | `UsernameFormat__Teacher` | `Emailadres` |
@@ -17,11 +17,17 @@
 
 Do not configure a connector ID or CSV version. The application resolves the connector from the inbound flow and maps `schoolDataSyncV1` to V1 and `schoolDataSyncV2Rev1` to V2.1. One run combines all successful configured schools into one complete selected-format dataset. A failed school is omitted, but makes the final exit code `1`.
 
+After trimming, the first character of `Somtoday__Environment` selects `PROD`, `TEST`, `ACCEPTATIE`, or `NIGHTLY` case-insensitively. A single `P`, `T`, `A`, or `N` is therefore sufficient. Use the complete word in configuration for readability. Every value selected through `N` is Development-only.
+
 Header-only mode is enabled automatically on July 31 in `Europe/Amsterdam`. It still resolves the connector and discovers configured schools before uploading the complete header-only set.
 
 ## Username expressions
 
-A bare property such as `Emailadres` becomes `{user.Emailadres}`. Expressions may contain literals, multiple property expressions, and supported Dynamic LINQ operations, for example `{user.Emailadres.ToLower()}` or `{user.Voorletters}.{user.Achternaam}`. Treat expressions as trusted administrator configuration. Do not use BSN/ECK identifiers, phone numbers, dates, nested objects, or other sensitive fields.
+A bare property such as `Emailadres` becomes `{user.Emailadres}`. A template can combine literal text, multiple property expressions, and supported Dynamic LINQ string operations. Examples are `idm-{user.Emailadres}`, `{user.Emailadres}-student`, `{user.Emailadres.Split("@")[0]}@school.nl`, and `{user.Emailadres.Replace("@old.example", "@new.example")}`.
+
+Startup validates the template structure and compiles and caches the teacher and pupil formatters without executing them against synthetic source data. Dataset construction evaluates the compiled formatter for each included person. A data-dependent expression failure stops construction before an upload session is requested. Use a conditional expression when source data can omit a required delimiter, for example `{user.Emailadres != null && user.Emailadres.Contains("@") ? user.Emailadres.Split("@")[0] : ""}`.
+
+Treat expressions as trusted administrator configuration. Do not use BSN/ECK identifiers, phone numbers, dates, nested objects, or other sensitive fields.
 
 Teacher and pupil export is matching-only. Configure SDS not to create unmatched accounts.
 

@@ -9,6 +9,8 @@ namespace Somtoday2MicrosoftSDS;
 
 internal class Program
 {
+    internal const string SdsGraphHttpClientName = "SdsGraph";
+    internal const string SdsUploadHttpClientName = "SdsUpload";
     private const int TotalConnectionAttempts = 4;
     private static readonly TimeSpan ConnectionRetryDelay = TimeSpan.FromSeconds(2);
     private static ILogger<Program> _logger;
@@ -26,7 +28,23 @@ internal class Program
 
     internal static HostApplicationBuilder CreateHostApplicationBuilder()
     {
-        return Host.CreateApplicationBuilder();
+        HostApplicationBuilder builder = Host.CreateApplicationBuilder();
+        builder.Services.AddHttpClient();
+        builder.Services
+            .AddHttpClient(SdsGraphHttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHandler);
+        builder.Services
+            .AddHttpClient(SdsUploadHttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHandler);
+        return builder;
+    }
+
+    internal static SocketsHttpHandler CreateNoRedirectHandler()
+    {
+        return new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false
+        };
     }
 
     private static async Task<int> Main(string[] args)
@@ -35,7 +53,6 @@ internal class Program
         builder.Logging.ClearProviders();
         builder.Logging.AddConsole();
         builder.Logging.SetMinimumLevel(LogLevel.Information);
-        builder.Services.AddHttpClient();
         builder.Services.AddSingleton<FileHelper>();
 
         using IHost host = builder.Build();
@@ -78,8 +95,8 @@ internal class Program
 
             IHttpClientFactory httpClientFactory = host.Services.GetRequiredService<IHttpClientFactory>();
             SdsGraphClient sdsClient = new(
-                httpClientFactory.CreateClient(),
-                httpClientFactory.CreateClient(),
+                httpClientFactory.CreateClient(SdsGraphHttpClientName),
+                httpClientFactory.CreateClient(SdsUploadHttpClientName),
                 new DefaultAzureCredential());
             SdsConnector connector = await sdsClient.GetConnectorAsync(
                 configuration.InboundFlowId,

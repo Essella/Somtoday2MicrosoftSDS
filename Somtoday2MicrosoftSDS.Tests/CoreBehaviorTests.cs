@@ -59,6 +59,24 @@ public sealed class CoreBehaviorTests
     }
 
     [Fact]
+    public void ConfigurationRejectsEmptyResourceIdentifiers()
+    {
+        IConfiguration emptySchool = CreateConfiguration(new Dictionary<string, string>
+        {
+            ["Somtoday:SchoolUUID:0"] = Guid.Empty.ToString()
+        });
+        IConfiguration emptyFlow = CreateConfiguration(new Dictionary<string, string>
+        {
+            ["SchoolDataSync:InboundFlowId"] = Guid.Empty.ToString()
+        });
+
+        Assert.False(SyncConfiguration.TryCreate(emptySchool, true, out _, out string[] schoolErrors));
+        Assert.Contains(schoolErrors, error => error.Contains("empty UUID", StringComparison.Ordinal));
+        Assert.False(SyncConfiguration.TryCreate(emptyFlow, true, out _, out string[] flowErrors));
+        Assert.Contains(flowErrors, error => error.Contains("non-empty UUID", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void RemovedBlobAndConnectorIdSettingsAreNotPartOfConfiguration()
     {
         IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
@@ -82,6 +100,30 @@ public sealed class CoreBehaviorTests
         Assert.False(SyncConfiguration.TryCreate(configuration, false, out _, out _));
         Assert.True(SyncConfiguration.TryCreate(configuration, true, out _, out string[] errors),
             string.Join(Environment.NewLine, errors));
+    }
+
+    [Fact]
+    public void EnvironmentSelectionIntentionallyUsesTheFirstNonWhitespaceCharacter()
+    {
+        (string Configured, SomEnvironmentConfig Expected)[] cases =
+        [
+            (" P-readable-production ", SomEnvironmentConfig.Prod),
+            ("t-local-alias", SomEnvironmentConfig.Test),
+            ("A-acceptance", SomEnvironmentConfig.Acceptatie),
+            ("n-development-only", SomEnvironmentConfig.Nightly)
+        ];
+
+        foreach ((string configured, SomEnvironmentConfig expected) in cases)
+        {
+            IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
+            {
+                ["Somtoday:Environment"] = configured
+            });
+
+            Assert.True(SyncConfiguration.TryCreate(configuration, true, out SyncConfiguration result, out string[] errors),
+                string.Join(Environment.NewLine, errors));
+            Assert.Same(expected, result.SomEnvironment);
+        }
     }
 
     [Fact]
@@ -113,6 +155,16 @@ public sealed class CoreBehaviorTests
         Assert.DoesNotContain(
             builder.Configuration.Sources,
             source => source.GetType().FullName?.Contains("CommandLine", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public void SdsHttpClientsDisableAutomaticRedirects()
+    {
+        using SocketsHttpHandler graphHandler = Program.CreateNoRedirectHandler();
+        using SocketsHttpHandler uploadHandler = Program.CreateNoRedirectHandler();
+
+        Assert.False(graphHandler.AllowAutoRedirect);
+        Assert.False(uploadHandler.AllowAutoRedirect);
     }
 
     [Fact]
