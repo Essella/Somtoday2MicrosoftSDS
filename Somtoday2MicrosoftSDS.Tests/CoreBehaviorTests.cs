@@ -1,424 +1,101 @@
-using System.Reflection;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Configuration.UserSecrets;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using Somtoday2MicrosoftSDS.Helpers;
+using Somtoday2MicrosoftSDS.Models;
 using Xunit;
 
 namespace Somtoday2MicrosoftSDS.Tests;
 
-public class CoreBehaviorTests
+public sealed class CoreBehaviorTests
 {
-    private static readonly Guid FirstSchoolUuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
-    private static readonly Guid SecondSchoolUuid = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private static readonly Guid SchoolId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid FlowId = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
     [Fact]
     public void TrackedDefaultsContainNoCredentialsAndFailClosed()
     {
-        string settingsPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
-        using FileStream settings = File.OpenRead(settingsPath);
-        IConfiguration configuration = new ConfigurationBuilder()
-            .AddJsonStream(settings)
-            .Build();
+        using FileStream settings = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "appsettings.json"));
+        IConfiguration configuration = new ConfigurationBuilder().AddJsonStream(settings).Build();
 
         Assert.Empty(configuration.GetSection("Somtoday:SchoolUUID").GetChildren());
-        Assert.True(string.IsNullOrEmpty(configuration["Somtoday:ClientId"]));
         Assert.True(string.IsNullOrEmpty(configuration["Somtoday:ClientSecret"]));
-        Assert.True(string.IsNullOrEmpty(configuration["Storage:AzureBlob:ServiceUri"]));
-        Assert.True(string.IsNullOrEmpty(configuration["Storage:AzureBlob:ConnectionString"]));
-        Assert.True(configuration.GetValue<bool>("Output:SeparateByInstitution"));
-        Assert.False(configuration.GetValue<bool>("Output:SeparateByLocation"));
-        Assert.False(SyncConfiguration.TryCreate(
-            configuration,
-            isDevelopment: false,
-            out _,
-            out _));
+        Assert.True(string.IsNullOrEmpty(configuration["SchoolDataSync:InboundFlowId"]));
+        Assert.Null(configuration["Storage:AzureBlob:ServiceUri"]);
+        Assert.False(SyncConfiguration.TryCreate(configuration, false, out _, out _));
     }
 
     [Fact]
-    public void ConfigurationAcceptsUuidArrayAndIdentityTakesPrecedence()
+    public void ConfigurationAcceptsMultipleUniqueSchoolsAndOneInboundFlow()
     {
+        Guid secondSchool = Guid.Parse("33333333-3333-3333-3333-333333333333");
         IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
         {
-            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
-            ["Storage:AzureBlob:ServiceUri"] = "https://account.blob.core.windows.net",
-            ["Storage:AzureBlob:ConnectionString"] = "UseDevelopmentStorage=true"
+            ["Somtoday:SchoolUUID:0"] = SchoolId.ToString(),
+            ["Somtoday:SchoolUUID:1"] = secondSchool.ToString()
         });
 
-        bool isValid = SyncConfiguration.TryCreate(
-            configuration,
-            isDevelopment: true,
-            out SyncConfiguration result,
-            out string[] errors);
-
-        Assert.True(isValid, string.Join(Environment.NewLine, errors));
-        Assert.Equal(new[] { FirstSchoolUuid }, result.SchoolUuids);
-        Assert.Equal(BlobAuthenticationMode.DefaultAzureCredential, BlobClientFactory.GetAuthenticationMode(result));
-    }
-
-    [Fact]
-    public void ConfigurationReadsClientSecretDirectlyFromConfiguration()
-    {
-        IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
-        {
-            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
-            ["Somtoday:ClientSecret"] = "configured-test-secret"
-        });
-
-        Assert.True(
-            SyncConfiguration.TryCreate(
-                configuration,
-                isDevelopment: true,
-                out SyncConfiguration result,
-                out string[] errors),
+        Assert.True(SyncConfiguration.TryCreate(configuration, false, out SyncConfiguration result, out string[] errors),
             string.Join(Environment.NewLine, errors));
-        Assert.Equal("configured-test-secret", result.ClientSecret);
+        Assert.Equal([SchoolId, secondSchool], result.SchoolUuids);
+        Assert.Equal(FlowId, result.InboundFlowId);
     }
 
     [Fact]
-    public void ConfigurationUsesConnectionStringWhenServiceUriIsEmpty()
+    public void ConfigurationRejectsMissingInvalidOrDuplicateIdentifiers()
     {
-        IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
+        IConfiguration missingFlow = CreateConfiguration(new Dictionary<string, string>
         {
-            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
-            ["Storage:AzureBlob:ServiceUri"] = "",
-            ["Storage:AzureBlob:ConnectionString"] = "UseDevelopmentStorage=true"
+            ["SchoolDataSync:InboundFlowId"] = ""
+        });
+        IConfiguration duplicateSchool = CreateConfiguration(new Dictionary<string, string>
+        {
+            ["Somtoday:SchoolUUID:1"] = SchoolId.ToString()
         });
 
-        Assert.True(
-            SyncConfiguration.TryCreate(
-                configuration,
-                isDevelopment: true,
-                out SyncConfiguration result,
-                out string[] errors),
-            string.Join(Environment.NewLine, errors));
-        Assert.Equal(BlobAuthenticationMode.ConnectionString, BlobClientFactory.GetAuthenticationMode(result));
+        Assert.False(SyncConfiguration.TryCreate(missingFlow, true, out _, out string[] flowErrors));
+        Assert.Contains(flowErrors, error => error.Contains("InboundFlowId", StringComparison.Ordinal));
+        Assert.False(SyncConfiguration.TryCreate(duplicateSchool, true, out _, out _));
     }
 
     [Fact]
-    public void OutputGroupingUsesConfirmedDefaultsAndAcceptsOverrides()
-    {
-        IConfiguration defaults = CreateConfiguration(new Dictionary<string, string>
-        {
-            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString()
-        });
-        IConfiguration overrides = CreateConfiguration(new Dictionary<string, string>
-        {
-            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
-            ["Output:SeparateByInstitution"] = "false",
-            ["Output:SeparateByLocation"] = "true"
-        });
-
-        Assert.True(SyncConfiguration.TryCreate(
-            defaults,
-            true,
-            out SyncConfiguration defaultResult,
-            out string[] defaultErrors),
-            string.Join(Environment.NewLine, defaultErrors));
-        Assert.True(defaultResult.SeparateByInstitution);
-        Assert.False(defaultResult.SeparateByLocation);
-
-        Assert.True(SyncConfiguration.TryCreate(
-            overrides,
-            true,
-            out SyncConfiguration overrideResult,
-            out string[] overrideErrors),
-            string.Join(Environment.NewLine, overrideErrors));
-        Assert.False(overrideResult.SeparateByInstitution);
-        Assert.True(overrideResult.SeparateByLocation);
-    }
-
-    [Fact]
-    public void ProductionRejectsConnectionStringAndRequiresServiceUri()
+    public void RemovedBlobAndConnectorIdSettingsAreNotPartOfConfiguration()
     {
         IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
         {
-            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
-            ["Storage:AzureBlob:ServiceUri"] = "",
-            ["Storage:AzureBlob:ConnectionString"] = "UseDevelopmentStorage=true"
+            ["Storage:AzureBlob:ServiceUri"] = "http://ignored.invalid",
+            ["SchoolDataSync:ConnectorId"] = Guid.NewGuid().ToString()
         });
 
-        Assert.False(SyncConfiguration.TryCreate(
-            configuration,
-            isDevelopment: false,
-            out _,
-            out string[] errors));
-        Assert.Contains(errors, error => error.Contains("allowed only in Development", StringComparison.Ordinal));
-        Assert.Contains(errors, error => error.Contains("ServiceUri is required", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void ProductionUsesManagedIdentityWhenServiceUriIsConfigured()
-    {
-        IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
-        {
-            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
-            ["Storage:AzureBlob:ServiceUri"] = "https://account.blob.core.windows.net",
-            ["Storage:AzureBlob:ConnectionString"] = ""
-        });
-
-        Assert.True(
-            SyncConfiguration.TryCreate(
-                configuration,
-                isDevelopment: false,
-                out SyncConfiguration result,
-                out string[] errors),
-            string.Join(Environment.NewLine, errors));
-        Assert.Equal(BlobAuthenticationMode.DefaultAzureCredential, BlobClientFactory.GetAuthenticationMode(result));
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void ConfigurationRejectsHttpBlobServiceUri(bool isDevelopment)
-    {
-        IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
-        {
-            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
-            ["Storage:AzureBlob:ServiceUri"] = "http://account.blob.core.windows.net",
-            ["Storage:AzureBlob:ConnectionString"] = ""
-        });
-
-        Assert.False(SyncConfiguration.TryCreate(
-            configuration,
-            isDevelopment,
-            out _,
-            out string[] errors));
-        Assert.Contains(
-            errors,
-            error => error.Contains("absolute HTTPS URI", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void NightlyIsAcceptedOnlyInDevelopment()
-    {
-        IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
-        {
-            ["Somtoday:Environment"] = "NIGHTLY",
-            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
-            ["Storage:AzureBlob:ServiceUri"] = "https://account.blob.core.windows.net",
-            ["Storage:AzureBlob:ConnectionString"] = ""
-        });
-
-        Assert.False(SyncConfiguration.TryCreate(
-            configuration,
-            isDevelopment: false,
-            out _,
-            out string[] productionErrors));
-        Assert.Contains(
-            productionErrors,
-            error => error.Contains("NIGHTLY is allowed only in Development", StringComparison.Ordinal));
-
-        Assert.True(
-            SyncConfiguration.TryCreate(
-                configuration,
-                isDevelopment: true,
-                out SyncConfiguration developmentResult,
-                out string[] developmentErrors),
-            string.Join(Environment.NewLine, developmentErrors));
-        Assert.Same(SomEnvironmentConfig.Nightly, developmentResult.SomEnvironment);
-    }
-
-    [Theory]
-    [InlineData("PROD")]
-    [InlineData("TEST")]
-    [InlineData("ACCEPTATIE")]
-    public void ProductionAcceptsHttpsSomtodayEnvironments(string environment)
-    {
-        IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
-        {
-            ["Somtoday:Environment"] = environment,
-            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
-            ["Storage:AzureBlob:ServiceUri"] = "https://account.blob.core.windows.net",
-            ["Storage:AzureBlob:ConnectionString"] = ""
-        });
-
-        Assert.True(
-            SyncConfiguration.TryCreate(
-                configuration,
-                isDevelopment: false,
-                out _,
-                out string[] errors),
+        Assert.True(SyncConfiguration.TryCreate(configuration, false, out _, out string[] errors),
             string.Join(Environment.NewLine, errors));
     }
 
     [Fact]
-    public void ConfigurationRejectsScalarInvalidAndDuplicateUuids()
-    {
-        IConfiguration scalarConfiguration = CreateConfiguration(new Dictionary<string, string>
-        {
-            ["Somtoday:SchoolUUID"] = FirstSchoolUuid.ToString()
-        });
-        IConfiguration duplicateConfiguration = CreateConfiguration(new Dictionary<string, string>
-        {
-            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
-            ["Somtoday:SchoolUUID:1"] = FirstSchoolUuid.ToString()
-        });
-        IConfiguration invalidConfiguration = CreateConfiguration(new Dictionary<string, string>
-        {
-            ["Somtoday:SchoolUUID:0"] = "not-a-uuid"
-        });
-
-        Assert.False(SyncConfiguration.TryCreate(scalarConfiguration, true, out _, out _));
-        Assert.False(SyncConfiguration.TryCreate(duplicateConfiguration, true, out _, out _));
-        Assert.False(SyncConfiguration.TryCreate(invalidConfiguration, true, out _, out _));
-    }
-
-    [Fact]
-    public void RemovedConfigurationKeysAreNotRequired()
+    public void NightlyRemainsDevelopmentOnly()
     {
         IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
         {
-            ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString()
+            ["Somtoday:Environment"] = "NIGHTLY"
         });
 
-        Assert.True(
-            SyncConfiguration.TryCreate(configuration, true, out _, out string[] errors),
+        Assert.False(SyncConfiguration.TryCreate(configuration, false, out _, out _));
+        Assert.True(SyncConfiguration.TryCreate(configuration, true, out _, out string[] errors),
             string.Join(Environment.NewLine, errors));
     }
 
     [Fact]
-    public void EnvironmentVariablesOverrideJsonStyleConfiguration()
+    public void ConnectorFormatSelectsExactlyOneDataset()
     {
-        const string prefix = "S2MSDS_TEST_";
-        const string clientVariableName = prefix + "Somtoday__ClientId";
-        const string institutionVariableName = prefix + "Output__SeparateByInstitution";
-        const string locationVariableName = prefix + "Output__SeparateByLocation";
-        Environment.SetEnvironmentVariable(clientVariableName, "client-from-environment");
-        Environment.SetEnvironmentVariable(institutionVariableName, "false");
-        Environment.SetEnvironmentVariable(locationVariableName, "true");
+        FileHelper helper = new();
 
-        try
-        {
-            IConfiguration configuration = new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string>
-                {
-                    ["Somtoday:Environment"] = "PROD",
-                    ["Somtoday:ClientId"] = "client-from-json",
-                    ["Somtoday:ClientSecret"] = "test-secret",
-                    ["Somtoday:SchoolUUID:0"] = FirstSchoolUuid.ToString(),
-                    ["Storage:AzureBlob:ConnectionString"] = "UseDevelopmentStorage=true",
-                    ["Storage:AzureBlob:Container"] = "sds",
-                    ["Output:Folder"] = "sds/output",
-                    ["Output:SeparateByInstitution"] = "true",
-                    ["Output:SeparateByLocation"] = "false"
-                })
-                .AddEnvironmentVariables(prefix)
-                .Build();
+        PublicationDataset v1 = Program.CreateEmptyDataset(SdsDatasetFormat.V1, false, helper);
+        PublicationDataset v21 = Program.CreateEmptyDataset(SdsDatasetFormat.V2Rev1, false, helper);
 
-            Assert.Equal("client-from-environment", configuration["Somtoday:ClientId"]);
-            Assert.True(SyncConfiguration.TryCreate(
-                configuration,
-                isDevelopment: true,
-                out SyncConfiguration result,
-                out string[] errors),
-                string.Join(Environment.NewLine, errors));
-            Assert.False(result.SeparateByInstitution);
-            Assert.True(result.SeparateByLocation);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(clientVariableName, null);
-            Environment.SetEnvironmentVariable(institutionVariableName, null);
-            Environment.SetEnvironmentVariable(locationVariableName, null);
-        }
-    }
-
-    [Fact]
-    public void ApplicationAssemblyDeclaresUserSecretsIdForDevelopmentConfiguration()
-    {
-        UserSecretsIdAttribute attribute = typeof(Program).Assembly
-            .GetCustomAttribute<UserSecretsIdAttribute>();
-
-        Assert.NotNull(attribute);
-        Assert.StartsWith("Somtoday2MicrosoftSDS-", attribute.UserSecretsId, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void LocationSelectionIncludesAllWhenIncludeListIsEmptyAndAppliesExclusions()
-    {
-        List<Vestiging> locations =
-        [
-            Location("A"),
-            Location(" b "),
-            Location("C")
-        ];
-
-        List<Vestiging> selected = LocationSelector.Select(locations, [], [" B "]);
-
-        Assert.Equal(new[] { "A", "C" }, selected.Select(location => location.Afkorting));
-    }
-
-    [Fact]
-    public void LocationSelectionUsesCaseInsensitiveWhitelistAndExclusionWins()
-    {
-        List<Vestiging> locations = [Location("A"), Location("B"), Location("C")];
-
-        List<Vestiging> selected = LocationSelector.Select(locations, [" a ", "B", "unknown"], ["A"]);
-
-        Assert.Single(selected);
-        Assert.Equal("B", selected[0].Afkorting);
-    }
-
-    [Fact]
-    public void LocationSelectionRetainsBlankCodesOnlyWhenInclusionListIsEmpty()
-    {
-        List<Vestiging> locations = [Location(null), Location(" "), Location("A")];
-
-        List<Vestiging> selectedWithoutWhitelist = LocationSelector.Select(locations, [], []);
-        List<Vestiging> selectedWithWhitelist = LocationSelector.Select(locations, ["A"], []);
-
-        Assert.Equal(locations, selectedWithoutWhitelist);
-        Assert.Equal("A", Assert.Single(selectedWithWhitelist).Afkorting);
-    }
-
-    [Theory]
-    [InlineData("AC/HL", "AC_HL")]
-    [InlineData("AC\\HL", "AC_HL")]
-    [InlineData(" school ", "school")]
-    public void BlobPathSegmentsAreSanitized(string input, string expected)
-    {
-        Assert.Equal(expected, BlobPathHelper.SanitizeSegment(input, "abbreviation"));
-    }
-
-    [Fact]
-    public void BlobPrefixUsesForwardSlashesAndVersionBelowLocation()
-    {
-        string output = BlobPathHelper.NormalizePrefix("/sds\\output/");
-        string v1Prefix = BlobPathHelper.Combine(output, "school", "location", "v1");
-        string v2Prefix = BlobPathHelper.Combine(output, "school", "location", "v2");
-
-        Assert.Equal("sds/output/school/location/v1", v1Prefix);
-        Assert.Equal("sds/output/school/location/v2", v2Prefix);
-    }
-
-    [Fact]
-    public void InstitutionSelectionMatchesConfiguredUuidFromMultiInstitutionResponse()
-    {
-        Instelling[] institutions =
-        [
-            Institution(FirstSchoolUuid, "FIRST"),
-            Institution(SecondSchoolUuid, "SECOND")
-        ];
-
-        Instelling selected = OpenAPIHelper.SelectInstitution(institutions, SecondSchoolUuid);
-
-        Assert.Equal("SECOND", selected.Afkorting);
-    }
-
-    [Fact]
-    public void InstitutionSelectionRejectsMissingDuplicateOrEmptyAbbreviation()
-    {
-        Assert.Throws<InvalidOperationException>(() => OpenAPIHelper.SelectInstitution([], FirstSchoolUuid));
-        Assert.Throws<InvalidOperationException>(() => OpenAPIHelper.SelectInstitution(
-            [Institution(FirstSchoolUuid, "A"), Institution(FirstSchoolUuid, "B")],
-            FirstSchoolUuid));
-        Assert.Throws<InvalidOperationException>(() => OpenAPIHelper.SelectInstitution(
-            [Institution(FirstSchoolUuid, " ")],
-            FirstSchoolUuid));
-        Assert.Throws<InvalidOperationException>(() => OpenAPIHelper.SelectInstitution(
-            [Institution(FirstSchoolUuid, "..")],
-            FirstSchoolUuid));
+        Assert.Equal(SdsDatasetFormat.V1, v1.Format);
+        Assert.Equal(6, v1.Files.Count);
+        Assert.Equal(SdsDatasetFormat.V2Rev1, v21.Format);
+        Assert.Equal(5, v21.Files.Count);
     }
 
     [Theory]
@@ -432,81 +109,22 @@ public class CoreBehaviorTests
     }
 
     [Fact]
-    public void EmptyCsvArgumentIsExactCaseInsensitiveAndAllowsDuplicates()
-    {
-        DateOnly ordinaryDay = new(2026, 1, 1);
-
-        Assert.True(Program.ShouldGenerateEmptyCsv(
-            ["--ignored", "--EMPTY-CSV", "--empty-csv"],
-            configuredGenerateEmptyCsv: false,
-            ordinaryDay));
-        Assert.False(Program.ShouldGenerateEmptyCsv(
-            ["--empty-csv=true", "--Output:Folder=override", "unrelated"],
-            configuredGenerateEmptyCsv: false,
-            ordinaryDay));
-    }
-
-    [Fact]
-    public void HostConfigurationDoesNotRegisterACommandLineProvider()
+    public void HostConfigurationDoesNotRegisterCommandLineConfiguration()
     {
         HostApplicationBuilder builder = Program.CreateHostApplicationBuilder();
-
         Assert.DoesNotContain(
             builder.Configuration.Sources,
-            source => source.GetType().FullName?.Contains(
-                "CommandLine",
-                StringComparison.OrdinalIgnoreCase) == true);
+            source => source.GetType().FullName?.Contains("CommandLine", StringComparison.OrdinalIgnoreCase) == true);
     }
 
     [Fact]
-    public void RunIdIsACompactVersion7Guid()
+    public void LocationWithoutExportableClassesIsSkipped()
     {
-        string runId = Program.CreateRunId();
+        ResolvedExportPopulation population = new(
+            new Vestiging { Uuid = Guid.NewGuid(), Naam = "Location", Afkorting = "LOC" },
+            [], [], [], [], 0);
 
-        Assert.Equal(32, runId.Length);
-        Assert.True(Guid.TryParseExact(runId, "N", out _));
-        Assert.Equal('7', runId[12]);
-    }
-
-    [Theory]
-    [InlineData(2026, 7, 30, 22, 30, 2026, 7, 31)]
-    [InlineData(2026, 12, 31, 23, 30, 2027, 1, 1)]
-    public void AmsterdamDateUsesCetAndCestAtLocalMidnight(
-        int utcYear,
-        int utcMonth,
-        int utcDay,
-        int utcHour,
-        int utcMinute,
-        int expectedYear,
-        int expectedMonth,
-        int expectedDay)
-    {
-        DateTimeOffset instant = new(
-            utcYear,
-            utcMonth,
-            utcDay,
-            utcHour,
-            utcMinute,
-            0,
-            TimeSpan.Zero);
-
-        Assert.Equal(
-            new DateOnly(expectedYear, expectedMonth, expectedDay),
-            AmsterdamTimeHelper.GetDate(instant));
-    }
-
-    [Fact]
-    public void AmsterdamSchoolYearChangesAtLocalAugustFirst()
-    {
-        DateOnly beforeBoundary = AmsterdamTimeHelper.GetDate(
-            new DateTimeOffset(2026, 7, 31, 21, 59, 0, TimeSpan.Zero));
-        DateOnly atBoundary = AmsterdamTimeHelper.GetDate(
-            new DateTimeOffset(2026, 7, 31, 22, 0, 0, TimeSpan.Zero));
-
-        Assert.Equal(new DateOnly(2026, 7, 31), beforeBoundary);
-        Assert.Equal("2025-2026", AmsterdamTimeHelper.GetSchoolYear(beforeBoundary));
-        Assert.Equal(new DateOnly(2026, 8, 1), atBoundary);
-        Assert.Equal("2026-2027", AmsterdamTimeHelper.GetSchoolYear(atBoundary));
+        Assert.False(Program.ShouldPublishLocation(population, "School", NullLogger<Program>.Instance));
     }
 
     private static IConfiguration CreateConfiguration(Dictionary<string, string> overrides)
@@ -516,39 +134,16 @@ public class CoreBehaviorTests
             ["Somtoday:Environment"] = "PROD",
             ["Somtoday:ClientId"] = "client-id",
             ["Somtoday:ClientSecret"] = "client-secret",
-            ["Storage:AzureBlob:ConnectionString"] = "UseDevelopmentStorage=true",
-            ["Storage:AzureBlob:Container"] = "sds",
-            ["Output:Folder"] = "sds/output",
+            ["Somtoday:SchoolUUID:0"] = SchoolId.ToString(),
+            ["SchoolDataSync:InboundFlowId"] = FlowId.ToString(),
             ["Output:GenerateEmptyCsv"] = "false",
             ["SchoolDataSync:EnableGuardianSync"] = "false"
         };
-
         foreach ((string key, string value) in overrides)
         {
             values[key] = value;
         }
 
         return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
-    }
-
-    private static Vestiging Location(string abbreviation)
-    {
-        return new Vestiging
-        {
-            Uuid = Guid.NewGuid(),
-            Naam = abbreviation,
-            Afkorting = abbreviation
-        };
-    }
-
-    private static Instelling Institution(Guid uuid, string abbreviation)
-    {
-        return new Instelling
-        {
-            Uuid = uuid,
-            Naam = abbreviation,
-            Afkorting = abbreviation,
-            Brins = []
-        };
     }
 }

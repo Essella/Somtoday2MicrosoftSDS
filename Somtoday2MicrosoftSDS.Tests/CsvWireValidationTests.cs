@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Text;
 using CsvHelper.Configuration;
-using Microsoft.Extensions.Logging.Abstractions;
 using Somtoday2MicrosoftSDS.Helpers;
 using Somtoday2MicrosoftSDS.Models;
 using Xunit;
@@ -149,51 +148,6 @@ public sealed class CsvWireValidationTests
 
         Assert.True(validatedFields > 0);
         Assert.Equal(["Guardianrelationship.csv:Role"], nonWritableMappedStrings);
-    }
-
-    [Fact]
-    public async Task WireFailureHappensBeforeStagingAndDoesNotSuppressTheNextVersion()
-    {
-        Guid schoolUuid = Guid.NewGuid();
-        HashSet<Guid> failedSchools = [];
-        int stagingUploads = 0;
-        int nextVersionAttempts = 0;
-        string liveContent = "previous live content";
-        SDScsvV1 invalidV1 = new();
-        invalidV1.Schools.Add(new School { SISid = "private-id", Name = "invalid\nname" });
-
-        await Program.PublishVersionAsync(
-            "V1",
-            "output/v1",
-            [schoolUuid],
-            failedSchools,
-            () =>
-            {
-                _ = new FileHelper().CreateV1Dataset(invalidV1, includeGuardianSync: false);
-                stagingUploads++;
-                liveContent = "new live content";
-                return Task.FromResult(DatasetPublicationResult.Succeeded);
-            },
-            NullLogger<Program>.Instance,
-            CancellationToken.None);
-
-        await Program.PublishVersionAsync(
-            "V2.1",
-            "output/v2",
-            [schoolUuid],
-            failedSchools,
-            () =>
-            {
-                nextVersionAttempts++;
-                return Task.FromResult(DatasetPublicationResult.Succeeded);
-            },
-            NullLogger<Program>.Instance,
-            CancellationToken.None);
-
-        Assert.Equal(0, stagingUploads);
-        Assert.Equal("previous live content", liveContent);
-        Assert.Contains(schoolUuid, failedSchools);
-        Assert.Equal(1, nextVersionAttempts);
     }
 
     private static void AssertDataset(

@@ -1,37 +1,54 @@
+extension microsoftGraphV1
+
 targetScope = 'resourceGroup'
 
-@description('Korte prefix voor de namen van alle resources. Gebruik 3-12 kleine letters, cijfers of koppeltekens; standaard: somtodaysds.')
+@description('ACA-omgevingsmodus. new maakt een nieuwe omgeving met Log Analytics; existing gebruikt de opgegeven bestaande omgeving.')
+@allowed([
+  'new'
+  'existing'
+])
+param environmentMode string = 'new'
+
+@description('Korte prefix voor nieuwe resourcenamen; standaard: somtodaysds.')
 @minLength(3)
-@maxLength(12)
+@maxLength(20)
 param namePrefix string = 'somtodaysds'
 
-@description('Containerimage uit GHCR, inclusief release-tag of digest. Gebruik in productie bij voorkeur een vaste tag of digest; standaard: latest.')
+@description('Naam van de nieuwe Container Apps Environment. Alleen gebruikt bij environmentMode new.')
+param containerAppsEnvironmentName string = '${namePrefix}-env'
+
+@description('Volledige resource-ID van een bestaande Container Apps Environment in dezelfde subscription. Verplicht bij environmentMode existing.')
+param existingContainerAppsEnvironmentResourceId string = ''
+
+@description('Naam van deze Container Apps Job.')
+param jobName string = '${namePrefix}-job'
+
+@description('Containerimage uit GHCR, inclusief release-tag of digest.')
 param imageReference string = 'ghcr.io/essella/somtoday2microsoftsds:latest'
 
-@description('Cron-schema in UTC voor de Job. Standaard: dagelijks om 03:00 en 15:00 UTC (0 3,15 * * *). Dat betekent 04:00 en 16:00 in Nederland (CET/CEST).')
+@description('Cron-schema in UTC voor de Job.')
 param cronExpression string = '0 3,15 * * *'
 
-@description('Maximale looptijd van een Job-replica in seconden (1-3600); standaard: 3600 seconden.')
 @minValue(1)
 @maxValue(3600)
 param replicaTimeoutSeconds int = 3600
 
-@description('Aantal extra pogingen na een mislukte Job-replica; standaard: 1.')
 @minValue(0)
 param replicaRetryLimit int = 1
 
-@description('Verplicht: Somtoday-instellings-UUIDs. Voorbeelden: 11111111-1111-1111-1111-111111111111 en 22222222-2222-2222-2222-222222222222.')
+@description('Somtoday-instellings-UUIDs die samen één volledige dataset vormen.')
 @minLength(1)
 param schoolUuids array = [
   '11111111-1111-1111-1111-111111111111'
-  '22222222-2222-2222-2222-222222222222'
 ]
 
-@description('Verplicht: OAuth-client-ID van Somtoday Connect.')
+@description('Inbound-flow-ID van Microsoft School Data Sync. Dit is niet de connector-ID.')
+param inboundFlowId string
+
+@description('OAuth-client-ID van Somtoday Connect.')
 @minLength(1)
 param somtodayClientId string
 
-@description('Somtoday-omgeving: PROD, TEST of ACCEPTATIE; standaard: PROD.')
 @allowed([
   'PROD'
   'TEST'
@@ -39,66 +56,71 @@ param somtodayClientId string
 ])
 param somtodayEnvironment string = 'PROD'
 
-@description('Verplicht: OAuth-clientsecret van Somtoday Connect. Wordt veilig opgeslagen als secret van de Container Apps Job.')
+@description('OAuth-clientsecret van Somtoday Connect. Wordt opgeslagen als Job-secret.')
 @secure()
 @minLength(1)
 param somtodayClientSecret string
 
-@description('Locatiecodes om op te nemen.')
 param includedLocationCodes array = []
-
-@description('Locatiecodes om uit te sluiten.')
-param excludedLocationCodes array = [
-  'School1'
-  'School2'
-]
-
-@description('Exporteer SDS-guardiangebruikers en -relaties; standaard: false.')
+param excludedLocationCodes array = []
 param enableGuardianSync bool = false
-
-@description('Gebruikersnaamexpressie voor medewerkers; standaard: Emailadres.')
 param teacherUsernameFormat string = 'Emailadres'
-
-@description('Gebruikersnaamexpressie voor leerlingen; standaard: Emailadres.')
 param studentUsernameFormat string = 'Emailadres'
-
-@description('Naam van de prive Blobcontainer voor de CSV-uitvoer; standaard: sds.')
-param blobContainerName string = 'sds'
-
-@description('Virtuele basismap in de Blobcontainer voor de uitvoer; standaard: sds/output.')
-param outputFolder string = 'sds/output'
-
-@description('Genereer altijd SDS-bestanden met alleen headers; standaard: false.')
 param generateEmptyCsv bool = false
 
-@description('Maak een afzonderlijke uitvoermap per Somtoday-instelling; standaard: true.')
-param separateByInstitution bool = true
-
-@description('Maak een afzonderlijke uitvoermap per Somtoday-vestiging; standaard: false.')
-param separateByLocation bool = false
-
 var normalizedPrefix = toLower(namePrefix)
-var uniqueSuffix = uniqueString(subscription().subscriptionId, resourceGroup().id)
-var storageAccountName = take('sds${replace(normalizedPrefix, '-', '')}${uniqueSuffix}', 24)
 var logAnalyticsName = '${normalizedPrefix}-logs'
-var environmentName = '${normalizedPrefix}-env'
-var jobName = '${normalizedPrefix}-job'
 var containerName = 'somtoday2microsoftsds'
-var missingSomtodayClientSecretMarker = '__SOMTODAY_CLIENT_SECRET_REQUIRED__'
-var validatedSomtodayClientSecret = somtodayClientSecret == missingSomtodayClientSecretMarker
-  ? fail('somtodayClientSecret must be supplied with a non-empty value.')
-  : somtodayClientSecret
-var slashNormalizedOutputFolder = replace(trim(outputFolder), '\\', '/')
-var normalizedOutputFolderSegments = map(
-  filter(split(slashNormalizedOutputFolder, '/'), segment => !empty(trim(segment))),
-  segment => trim(segment)
-)
-var normalizedOutputFolder = !empty(normalizedOutputFolderSegments) && !contains(normalizedOutputFolderSegments, '.') && !contains(
-    normalizedOutputFolderSegments,
-    '..'
-  )
-  ? join(normalizedOutputFolderSegments, '/')
-  : fail('outputFolder must contain at least one segment and may not contain . or .. segments.')
+var isNewEnvironment = environmentMode == 'new'
+var existingEnvironmentId = trim(existingContainerAppsEnvironmentResourceId)
+var candidateExistingEnvironmentSegments = split(existingEnvironmentId, '/')
+var isValidExistingEnvironmentId = length(candidateExistingEnvironmentSegments) == 9 && toLower(candidateExistingEnvironmentSegments[?1] ?? '') == 'subscriptions' && toLower(candidateExistingEnvironmentSegments[?2] ?? '') == toLower(subscription().subscriptionId) && toLower(candidateExistingEnvironmentSegments[?3] ?? '') == 'resourcegroups' && !empty(candidateExistingEnvironmentSegments[?4] ?? '') && toLower(candidateExistingEnvironmentSegments[?5] ?? '') == 'providers' && toLower(candidateExistingEnvironmentSegments[?6] ?? '') == 'microsoft.app' && toLower(candidateExistingEnvironmentSegments[?7] ?? '') == 'managedenvironments' && !empty(candidateExistingEnvironmentSegments[?8] ?? '')
+var validatedExistingEnvironmentId = isNewEnvironment
+  ? ''
+  : isValidExistingEnvironmentId
+    ? existingEnvironmentId
+    : fail('existingContainerAppsEnvironmentResourceId must be a full Microsoft.App/managedEnvironments resource ID in the current subscription.')
+var existingEnvironmentSegments = split(validatedExistingEnvironmentId, '/')
+var existingEnvironmentResourceGroup = isNewEnvironment ? '' : existingEnvironmentSegments[4]
+var existingEnvironmentName = isNewEnvironment ? '' : last(existingEnvironmentSegments)
+var validatedInboundFlowId = length(inboundFlowId) == 36
+  ? inboundFlowId
+  : fail('inboundFlowId must be a UUID.')
+
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (isNewEnvironment) {
+  name: logAnalyticsName
+  location: resourceGroup().location
+  tags: resourceGroup().tags
+  properties: {
+    retentionInDays: 30
+    features: {
+      enableLogAccessUsingOnlyResourcePermissions: true
+    }
+  }
+}
+
+resource newEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = if (isNewEnvironment) {
+  name: containerAppsEnvironmentName
+  location: resourceGroup().location
+  tags: resourceGroup().tags
+  properties: {
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: logAnalytics!.properties.customerId
+        sharedKey: logAnalytics!.listKeys().primarySharedKey
+      }
+    }
+  }
+}
+
+resource existingEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = if (!isNewEnvironment) {
+  scope: resourceGroup(existingEnvironmentResourceGroup)
+  name: existingEnvironmentName
+}
+
+var effectiveEnvironmentId = isNewEnvironment ? newEnvironment!.id : existingEnvironment!.id
+var effectiveLocation = isNewEnvironment ? resourceGroup().location : existingEnvironment!.location
 
 var baseEnvironmentVariables = [
   {
@@ -118,28 +140,12 @@ var baseEnvironmentVariables = [
     value: somtodayEnvironment
   }
   {
-    name: 'Storage__AzureBlob__ServiceUri'
-    value: storageAccount.properties.primaryEndpoints.blob
-  }
-  {
-    name: 'Storage__AzureBlob__Container'
-    value: blobContainerName
-  }
-  {
-    name: 'Output__Folder'
-    value: normalizedOutputFolder
+    name: 'SchoolDataSync__InboundFlowId'
+    value: validatedInboundFlowId
   }
   {
     name: 'Output__GenerateEmptyCsv'
     value: string(generateEmptyCsv)
-  }
-  {
-    name: 'Output__SeparateByInstitution'
-    value: string(separateByInstitution)
-  }
-  {
-    name: 'Output__SeparateByLocation'
-    value: string(separateByLocation)
   }
   {
     name: 'SchoolDataSync__EnableGuardianSync'
@@ -170,207 +176,65 @@ var excludedLocationEnvironmentVariables = [for (locationCode, index) in exclude
   value: string(locationCode)
 }]
 
-var secretEnvironmentVariables = [
-  {
-    name: 'Somtoday__ClientSecret'
-    secretRef: 'somtoday-client-secret'
-  }
-]
-
-var jobSecrets = [
-  {
-    name: 'somtoday-client-secret'
-    value: validatedSomtodayClientSecret
-  }
-]
-
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: storageAccountName
-  location: resourceGroup().location
-  tags: resourceGroup().tags
-  sku: {
-    name: 'Standard_LRS'
-  }
-  kind: 'StorageV2'
-  properties: {
-    accessTier: 'Hot'
-    allowBlobPublicAccess: false
-    allowSharedKeyAccess: false
-    defaultToOAuthAuthentication: true
-    supportsHttpsTrafficOnly: true
-    minimumTlsVersion: 'TLS1_2'
+module scheduledJob './job.bicep' = {
+  name: 'deploy-${jobName}'
+  params: {
+    jobName: jobName
+    location: effectiveLocation
+    tags: resourceGroup().tags
+    environmentId: effectiveEnvironmentId
+    imageReference: imageReference
+    containerName: containerName
+    cronExpression: cronExpression
+    replicaTimeoutSeconds: replicaTimeoutSeconds
+    replicaRetryLimit: replicaRetryLimit
+    somtodayClientSecret: somtodayClientSecret
+    environmentVariables: concat(
+      baseEnvironmentVariables,
+      schoolEnvironmentVariables,
+      includedLocationEnvironmentVariables,
+      excludedLocationEnvironmentVariables
+    )
   }
 }
 
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
-  parent: storageAccount
-  name: 'default'
-  properties: {
-    isVersioningEnabled: true
-    deleteRetentionPolicy: {
-      enabled: true
-      days: 7
-    }
-    containerDeleteRetentionPolicy: {
-      enabled: true
-      days: 7
-    }
-  }
+resource microsoftGraph 'Microsoft.Graph/servicePrincipals@v1.0' existing = {
+  appId: '00000003-0000-0000-c000-000000000000'
 }
 
-resource storageManagementPolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
-  parent: storageAccount
-  name: 'default'
-  properties: {
-    policy: {
-      rules: [
-        {
-          enabled: true
-          name: 'delete-staging-after-one-day'
-          type: 'Lifecycle'
-          definition: {
-            actions: {
-              baseBlob: {
-                delete: {
-                  daysAfterModificationGreaterThan: 1
-                }
-              }
-              version: {
-                delete: {
-                  daysAfterCreationGreaterThan: 1
-                }
-              }
-            }
-            filters: {
-              blobTypes: [
-                'blockBlob'
-              ]
-              prefixMatch: [
-                '${blobContainerName}/${normalizedOutputFolder}/.staging/'
-              ]
-            }
-          }
-        }
-        {
-          enabled: true
-          name: 'delete-previous-blob-versions-after-seven-days'
-          type: 'Lifecycle'
-          definition: {
-            actions: {
-              version: {
-                delete: {
-                  daysAfterCreationGreaterThan: 7
-                }
-              }
-            }
-            filters: {
-              blobTypes: [
-                'blockBlob'
-              ]
-              prefixMatch: [
-                '${blobContainerName}/'
-              ]
-            }
-          }
-        }
-      ]
-    }
-  }
+var inboundFlowReadWriteRoles = filter(microsoftGraph.appRoles, role => role.value == 'IndustryData-InboundFlow.ReadWrite.All')
+var connectorUploadRoles = filter(microsoftGraph.appRoles, role => role.value == 'IndustryData-DataConnector.Upload')
+var operationReadRoles = filter(microsoftGraph.appRoles, role => role.value == 'IndustryData.ReadBasic.All')
+var inboundFlowReadWriteRoleId = length(inboundFlowReadWriteRoles) == 1
+  ? first(inboundFlowReadWriteRoles)!.id
+  : fail('Microsoft Graph must expose exactly one IndustryData-InboundFlow.ReadWrite.All application role.')
+var connectorUploadRoleId = length(connectorUploadRoles) == 1
+  ? first(connectorUploadRoles)!.id
+  : fail('Microsoft Graph must expose exactly one IndustryData-DataConnector.Upload application role.')
+var operationReadRoleId = length(operationReadRoles) == 1
+  ? first(operationReadRoles)!.id
+  : fail('Microsoft Graph must expose exactly one IndustryData.ReadBasic.All application role.')
+
+resource inboundFlowReadWriteRoleAssignment 'Microsoft.Graph/appRoleAssignedTo@v1.0' = {
+  appRoleId: inboundFlowReadWriteRoleId
+  principalId: scheduledJob.outputs.principalId
+  resourceId: microsoftGraph.id
+  resourceDisplayName: microsoftGraph.displayName
 }
 
-resource outputContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  parent: blobService
-  name: blobContainerName
-  properties: {
-    publicAccess: 'None'
-  }
+resource connectorUploadRoleAssignment 'Microsoft.Graph/appRoleAssignedTo@v1.0' = {
+  appRoleId: connectorUploadRoleId
+  principalId: scheduledJob.outputs.principalId
+  resourceId: microsoftGraph.id
+  resourceDisplayName: microsoftGraph.displayName
 }
 
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
-  name: logAnalyticsName
-  location: resourceGroup().location
-  tags: resourceGroup().tags
-  properties: {
-    retentionInDays: 30
-    features: {
-      enableLogAccessUsingOnlyResourcePermissions: true
-    }
-  }
+resource operationReadRoleAssignment 'Microsoft.Graph/appRoleAssignedTo@v1.0' = {
+  appRoleId: operationReadRoleId
+  principalId: scheduledJob.outputs.principalId
+  resourceId: microsoftGraph.id
+  resourceDisplayName: microsoftGraph.displayName
 }
 
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
-  name: environmentName
-  location: resourceGroup().location
-  tags: resourceGroup().tags
-  properties: {
-    appLogsConfiguration: {
-      destination: 'log-analytics'
-      logAnalyticsConfiguration: {
-        customerId: logAnalytics.properties.customerId
-        sharedKey: logAnalytics.listKeys().primarySharedKey
-      }
-    }
-  }
-}
-
-resource scheduledJob 'Microsoft.App/jobs@2024-03-01' = {
-  name: jobName
-  location: resourceGroup().location
-  tags: resourceGroup().tags
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    environmentId: containerAppsEnvironment.id
-    configuration: {
-      replicaRetryLimit: replicaRetryLimit
-      replicaTimeout: replicaTimeoutSeconds
-      triggerType: 'Schedule'
-      scheduleTriggerConfig: {
-        cronExpression: cronExpression
-        parallelism: 1
-        replicaCompletionCount: 1
-      }
-      secrets: jobSecrets
-    }
-    template: {
-      containers: [
-        {
-          name: containerName
-          image: imageReference
-          env: concat(
-            baseEnvironmentVariables,
-            schoolEnvironmentVariables,
-            includedLocationEnvironmentVariables,
-            excludedLocationEnvironmentVariables,
-            secretEnvironmentVariables
-          )
-          resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
-          }
-        }
-      ]
-    }
-  }
-}
-
-var storageBlobDataContributorRoleId = subscriptionResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
-)
-
-resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(outputContainer.id, scheduledJob.id, storageBlobDataContributorRoleId)
-  scope: outputContainer
-  properties: {
-    principalId: scheduledJob.identity.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: storageBlobDataContributorRoleId
-  }
-}
-
-output jobName string = scheduledJob.name
-output containerAppsEnvironmentName string = containerAppsEnvironment.name
-output storageAccountName string = storageAccount.name
-output blobContainerName string = outputContainer.name
+output deployedJobName string = scheduledJob.outputs.jobName
+output deployedContainerAppsEnvironmentResourceId string = effectiveEnvironmentId

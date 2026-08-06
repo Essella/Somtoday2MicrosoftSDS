@@ -16,6 +16,8 @@ internal static class SafeExceptionSummary
                 $"{apiException.GetType().Name} (HTTP {apiException.StatusCode})",
             HttpRequestException httpRequest when httpRequest.StatusCode.HasValue =>
                 $"{httpRequest.GetType().Name} (HTTP {(int)httpRequest.StatusCode.Value})",
+            SdsPublicationException publication when publication.StatusCode.HasValue =>
+                $"{publication.GetType().Name} (HTTP {(int)publication.StatusCode.Value})",
             _ => exception.GetType().Name
         };
     }

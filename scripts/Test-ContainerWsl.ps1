@@ -177,7 +177,7 @@ try {
         throw 'De container logde de tijdelijke secretmarker.'
     }
 
-    Write-Host 'SIGTERM-cancellation tijdens een Blob-request controleren'
+    Write-Host 'SIGTERM-cancellation tijdens managed-identity tokenverwerving controleren'
     $containerName = "somtoday2microsoftsds-sigterm-$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
     $cancellationSecretMarker = "wslc-cancellation-secret-$([Guid]::NewGuid().ToString('N'))"
     try {
@@ -189,7 +189,10 @@ try {
             '--env', 'Somtoday__ClientId=wslc-cancellation-client',
             '--env', "Somtoday__ClientSecret=$cancellationSecretMarker",
             '--env', 'Somtoday__SchoolUUID__0=11111111-1111-1111-1111-111111111111',
-            '--env', 'Storage__AzureBlob__ConnectionString=DefaultEndpointsProtocol=http;AccountName=test;AccountKey=YWJjZA==;BlobEndpoint=http://192.0.2.1:10000/test;',
+            '--env', 'SchoolDataSync__InboundFlowId=22222222-2222-2222-2222-222222222222',
+            '--env', 'AZURE_TOKEN_CREDENTIALS=ManagedIdentityCredential',
+            '--env', 'IDENTITY_ENDPOINT=http://192.0.2.1:10000/metadata/identity/oauth2/token',
+            '--env', 'IDENTITY_HEADER=validation-only-header',
             $Image
         ) -CaptureOutput | Out-Null
 

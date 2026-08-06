@@ -160,24 +160,6 @@ namespace Somtoday2MicrosoftSDS.Helpers
                     $"Expected exactly one Somtoday institution for UUID {schoolUuid}, but found {matchingInstitutions.Length}");
             }
 
-            if (string.IsNullOrWhiteSpace(matchingInstitutions[0].Afkorting))
-            {
-                throw new InvalidOperationException($"Somtoday institution {schoolUuid} has no abbreviation");
-            }
-
-            try
-            {
-                BlobPathHelper.SanitizeSegment(
-                    matchingInstitutions[0].Afkorting,
-                    "institution abbreviation");
-            }
-            catch (ArgumentException ex)
-            {
-                throw new InvalidOperationException(
-                    $"Somtoday institution {schoolUuid} has an invalid abbreviation",
-                    ex);
-            }
-
             return matchingInstitutions[0];
         }
 

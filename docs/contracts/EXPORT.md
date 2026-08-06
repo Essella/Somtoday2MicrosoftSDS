@@ -4,9 +4,9 @@ This document defines confirmed intended SDS transformation behavior. External S
 
 ## Dataset formats and availability
 
-- For every eligible normal-mode output scope, the application always attempts one SDS V1 dataset and one SDS V2.1 dataset from the same included population. Neither version can be disabled or excluded by configuration or command-line selection. The datasets are separate publication units only for failure isolation, so failure of one does not suppress the attempt for the other.
-- Both versions use the same included institutions, locations, classes, teachers, pupils, and guardians.
-- Normal mode includes a location only when its resolved population contains at least one exportable class. In a grouped dataset, other included locations are still published; the publication unit is skipped only when no location remains. A skip logs a warning, is not a run failure, and leaves existing output unchanged.
+- The related SDS connector selects exactly one format per run: `schoolDataSyncV1` produces V1 and `schoolDataSyncV2Rev1` produces V2.1. There is no local format setting.
+- Both formats use the same population rules. All successful configured institutions and their eligible locations are combined into one complete dataset.
+- Normal mode includes a location only when its resolved population contains at least one exportable class. Upload is skipped when no eligible location remains. A no-data skip is not a run failure unless a configured institution failed.
 - Header-only mode emits all required files with headers and no data rows. It is enabled by `Output:GenerateEmptyCsv`, `--empty-csv`, or automatically on July 31 in `Europe/Amsterdam` time.
 
 ## CSV wire contract
@@ -32,7 +32,7 @@ Every file is comma-delimited UTF-8 without a byte-order mark. File names and he
 
 The established role values are V1 guardian `guardian`; V2.1 organization roles `staff`, `student`, and guardian `other`; V2.1 enrollment roles `teacher` and `student`; and V2.1 contact relationship role `guardian`.
 
-Before a row is serialized, every string field mapped by that file's active CSV map is checked for carriage-return or line-feed characters. A violation fails dataset construction with an `InvalidDataException` that identifies only the SDS version, exact file name, and exact column header; it never includes the field value or a person identifier. Header-only files and unmapped properties add no such validation failure. Because complete dataset construction precedes staging inside each version boundary, a violation causes zero staging uploads for that version, leaves its live output unchanged, and does not suppress another version or later scope.
+Before a row is serialized, every string field mapped by that file's active CSV map is checked for carriage-return or line-feed characters. A violation fails dataset construction with an `InvalidDataException` that identifies only the SDS version, exact file name, and exact column header; it never includes the field value or a person identifier. Header-only files and unmapped properties add no such validation failure. Because complete dataset construction precedes creation of the upload session, a violation causes zero SDS upload side effects.
 
 Teacher and pupil output is matching-only. V1 deliberately has no name columns in `Teacher.csv` or `Student.csv`; V2.1 leaves their `givenName` and `familyName` values empty. Configure SDS not to create unmatched users. Guardian names remain populated as specified below.
 
@@ -87,7 +87,7 @@ A non-empty exported phone value must ultimately consist of exactly one leading 
 
 The resolved population records, per location, how many guardians passed contact and pupil-relationship eligibility but were excluded only for missing required name fields. Log that count once for the location without logging a name, UUID, email address, or phone number.
 
-When guardian sync is enabled but generates no guardians or relationships, guardian-specific files are still emitted with headers only. Published-file removal when guardian sync is disabled is defined by the [publication contract](PUBLICATION.md).
+When guardian sync is enabled but generates no guardians or relationships, guardian-specific files are still emitted with headers only. When guardian sync is disabled, guardian-specific files are absent from the complete set.
 
 Somtoday does not indicate whether an adult pupil consented to guardian access. Keep the weekly guardian summary in Microsoft 365 disabled unless the school has independently established that enabling it is appropriate, and complete a privacy assessment before using guardian sync.
 
@@ -98,6 +98,4 @@ Somtoday does not indicate whether an adult pupil consented to guardian access. 
 - [SDS V2.1 CSV format](https://learn.microsoft.com/en-us/schooldatasync/sds-v2.1-csv-file-format) represents a guardian in `users.csv` with `sourcedId`, `username`, `givenName`, `familyName`, `email`, and optional `phone`.
 - [Microsoft guardian guidance](https://learn.microsoft.com/en-us/schooldatasync/parents-and-guardians-in-sds) requires names and email for a user referenced by a contact relationship.
 
-The transformer does not retrieve missing entities and does not independently validate the finished dataset against an external SDS service.
-
-For Power Automate transport, one flow reads one complete live V1 or V2.1 dataset and submits it to a Microsoft School Data Sync V2 data-flow ID configured for that same CSV format. Never mix versions, never read `.staging`, and provide the same complete file set used for the data flow's initial SDS upload each time. The word “V2” in the connector name identifies the current SDS experience; it does not restrict that experience to the V2.1 CSV format.
+The transformer does not retrieve missing entities. The finished complete dataset is uploaded and validated through the connector flow defined in the [publication contract](PUBLICATION.md).

@@ -1,6 +1,6 @@
 # Somtoday2MicrosoftSDS notice
 
-Somtoday2MicrosoftSDS exports data obtained through Somtoday Connect to CSV files for Microsoft School Data Sync.
+Somtoday2MicrosoftSDS converts data obtained through Somtoday Connect to CSV files and uploads one complete dataset directly to Microsoft School Data Sync.
 
 Copyright (C) 2026 Dwayne Selsig
 

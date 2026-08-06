@@ -420,17 +420,12 @@ public class OpenApiAuthenticationTests
     {
         return new SyncConfiguration(
             [SchoolUuid],
+            Guid.Parse("22222222-2222-2222-2222-222222222222"),
             "client-id",
             "client-secret",
             SomEnvironmentConfig.Prod,
             [],
             [],
-            "https://account.blob.core.windows.net",
-            null,
-            "sds",
-            "output",
-            false,
-            true,
             false,
             false);
     }

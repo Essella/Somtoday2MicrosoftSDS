@@ -1,24 +1,20 @@
 # Security policy
 
-## Supported versions
+## Supported versions and reporting
 
-Only the latest published release receives security fixes. Pin production deployments to a released version or digest and update after reviewing each release.
-
-## Report a vulnerability
-
-Do not create a public issue for a suspected vulnerability or an exposed credential. Use GitHub's **Report a vulnerability** option on the Security tab of this repository to submit a private report. Include the affected version, impact, reproduction steps and any proposed mitigation. Do not include working credentials or identifiable pupil, guardian or employee data.
-
-The maintainer will acknowledge a usable report, investigate it and coordinate disclosure. No fixed response or remediation time is guaranteed.
+Only the latest release receives security fixes. Report suspected vulnerabilities privately with GitHub's **Report a vulnerability** feature. Do not include credentials or identifiable pupil, guardian, or employee data.
 
 ## Secrets and personal data
 
-- Never commit Somtoday secrets, storage connection strings, Azure tokens or production CSV data.
-- In Azure, provide `somtodayClientSecret` only through the secure deployment parameter. The deployment stores it as an Azure Container Apps Job secret and exposes it only as `Somtoday__ClientSecret` to the Job.
-- Rotate a credential immediately if it may have appeared in Git history, logs, an issue or a build artifact. Removing it from the latest commit is not sufficient.
-- NIGHTLY has a plaintext HTTP Somtoday data endpoint and is restricted to Development. Never use it with real personal data or deploy it as a production environment.
-- Staging at `{Output:Folder}/.staging/{RunId}/{FileName}` is temporary data for only the current run and dataset; never use it for rollback, later-run recovery, or Power Automate ingestion. Cleanup is retried four times and remains best effort, so monitor warnings. Infrastructure makes staging base Blobs and versions lifecycle-eligible after more than one day, but asynchronous lifecycle processing and seven-day soft delete can retain the data longer.
-- Do not run overlapping instances. Startup cleanup deliberately recognizes both current and legacy application staging and can remove another run's files.
-- Guardian-name exclusion logging contains only a count. CSV CR/LF validation errors contain only SDS version, file name, and column name. Do not add source names, UUIDs, email addresses, phone numbers, field values, or CSV rows to either message.
-- Treat Dynamic LINQ username expressions as trusted administrator code, not a sandbox. Do not use BSN/ECK identifiers, phones, dates, nested objects, or other sensitive model properties in usernames.
-- For Power Automate Blob transport, grant its Entra user or service principal only the required `Storage Blob Data Reader` scope, read one complete live dataset, and exclude `.staging`. Do not enable SFTP/hierarchical namespace or add a Storage firewall for this connector path.
-- The deploying organization is responsible for Azure access controls, retention, monitoring and compliance with the AVG/GDPR.
+- Never commit Somtoday secrets, Azure tokens, SAS URLs or query strings, authentication bodies, or production CSV data.
+- Supply `somtodayClientSecret` only through the secure deployment parameter. It becomes a Container Apps Job secret exposed as `Somtoday__ClientSecret`.
+- Production Graph access is constrained to the Job's system-assigned managed identity. Grant only `IndustryData-InboundFlow.ReadWrite.All`, `IndustryData-DataConnector.Upload`, and the validation-operation polling permission `IndustryData.ReadBasic.All`.
+- The Graph bearer token is sent only to `graph.microsoft.com`. SAS uploads use a separate `HttpClient` and never receive an Authorization header.
+- Treat the upload-session URL as a secret. Preserve its query string for upload but never log it, a filename URL containing it, or response bodies that may expose it.
+- CSV data is built in memory and persists only in the temporary SDS-owned SAS container. This repository provisions no application Storage Account.
+- Guardian-name exclusion logs contain only a count. CSV CR/LF errors contain only SDS version, file name, and column name.
+- Preserve cancellation through token acquisition, Graph calls, retries, SAS uploads, and validation polling.
+- NIGHTLY uses plaintext HTTP and is Development-only; never use it with real personal data.
+- Treat Dynamic LINQ username expressions as trusted administrator code and do not use sensitive model fields.
+
+Rotate any credential that may have entered history, logs, an issue, or an artifact. Removing it from the latest commit is insufficient. The deploying organization remains responsible for tenant access controls, monitoring, purpose limitation, retention, and AVG/GDPR compliance.

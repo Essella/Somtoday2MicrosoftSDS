@@ -13,5 +13,5 @@ These instructions apply to the entire repository.
 9. Report uncertainties, areas not investigated, implementation deviations encountered, and tests not run.
 10. Do not modify `Somtoday2MicrosoftSDS/OpenAPIs/openapi.json` or generated `openapi.cs` without an explicit request and a record of the source, specification version, and generation tool/version.
 11. Never add secrets, tokens, connection strings, authentication bodies, personal data, production CSV files, or unsafe exception detail to code, tests, documentation, or logs.
-12. Preserve cancellation for network, retry, and Blob operations. Follow `SECURITY.md` for security/privacy work and keep tracked configuration non-sensitive.
+12. Preserve cancellation for token acquisition, network requests, retries, SAS uploads, and validation polling. Follow `SECURITY.md` for security/privacy work and keep tracked configuration non-sensitive.
 13. Write repository documentation and contributor instructions in English, except for `README.md`, which is deliberately maintained in Dutch for operators.

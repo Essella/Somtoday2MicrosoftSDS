@@ -18,7 +18,7 @@ By submitting a contribution, you agree that it is licensed under `AGPL-3.0-or-l
 
 ## Validate the change
 
-Follow [the development guide](docs/DEVELOPMENT.md) for build, test, publish, Bicep, and container commands. Add or update tests for behavioral changes, preserve cancellation through network and storage operations, and report validations not run. Do not commit generated build output.
+Follow [the development guide](docs/DEVELOPMENT.md) for build, test, publish, Bicep, and container commands. Add or update tests for behavioral changes, preserve cancellation through token acquisition, network requests, retries, SAS uploads, and validation polling, and report validations not run. Do not commit generated build output.
 
 ## Pull requests
 

@@ -9,33 +9,6 @@ namespace Somtoday2MicrosoftSDS.Helpers
 {
     internal class FileHelper
     {
-        private static readonly string[] V1CoreFileNames =
-        [
-            "School.csv",
-            "Section.csv",
-            "Teacher.csv",
-            "Student.csv",
-            "TeacherRoster.csv",
-            "StudentEnrollment.csv"
-        ];
-
-        private static readonly string[] V1GuardianFileNames =
-        [
-            "User.csv",
-            "Guardianrelationship.csv"
-        ];
-
-        private static readonly string[] V2CoreFileNames =
-        [
-            "orgs.csv",
-            "users.csv",
-            "roles.csv",
-            "classes.csv",
-            "enrollments.csv"
-        ];
-
-        private static readonly string[] V2GuardianFileNames = ["relationships.csv"];
-
         private readonly CsvConfiguration _configuration = new(CultureInfo.InvariantCulture)
         {
             Delimiter = ",",
@@ -63,12 +36,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                     sdsCsv.Guardianrelationship));
             }
 
-            return new PublicationDataset(
-                "v1",
-                includeGuardianSync,
-                files,
-                V1CoreFileNames,
-                V1GuardianFileNames);
+            return new PublicationDataset(SdsDatasetFormat.V1, files);
         }
 
         internal PublicationDataset CreateEmptyV1Dataset(bool includeGuardianSync)
@@ -95,12 +63,7 @@ namespace Somtoday2MicrosoftSDS.Helpers
                     sdsCsv.Relationships));
             }
 
-            return new PublicationDataset(
-                "v2",
-                includeGuardianSync,
-                files,
-                V2CoreFileNames,
-                V2GuardianFileNames);
+            return new PublicationDataset(SdsDatasetFormat.V2Rev1, files);
         }
 
         internal PublicationDataset CreateEmptyV2Dataset(bool includeGuardianSync)

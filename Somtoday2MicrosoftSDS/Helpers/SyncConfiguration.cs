@@ -1,159 +1,114 @@
 using Microsoft.Extensions.Configuration;
 
-namespace Somtoday2MicrosoftSDS.Helpers
+namespace Somtoday2MicrosoftSDS.Helpers;
+
+internal sealed record SyncConfiguration(
+    Guid[] SchoolUuids,
+    Guid InboundFlowId,
+    string ClientId,
+    string ClientSecret,
+    SomEnvironmentConfig SomEnvironment,
+    string[] IncludedLocationCodes,
+    string[] ExcludedLocationCodes,
+    bool GenerateEmptyCsv,
+    bool EnableGuardianSync)
 {
-    internal sealed record SyncConfiguration(
-        Guid[] SchoolUuids,
-        string ClientId,
-        string ClientSecret,
-        SomEnvironmentConfig SomEnvironment,
-        string[] IncludedLocationCodes,
-        string[] ExcludedLocationCodes,
-        string BlobServiceUri,
-        string BlobConnectionString,
-        string BlobContainer,
-        string OutputPrefix,
-        bool GenerateEmptyCsv,
-        bool SeparateByInstitution,
-        bool SeparateByLocation,
-        bool EnableGuardianSync)
+    internal static bool TryCreate(
+        IConfiguration configuration,
+        bool isDevelopment,
+        out SyncConfiguration value,
+        out string[] errors)
     {
-        internal static bool TryCreate(
-            IConfiguration configuration,
-            bool isDevelopment,
-            out SyncConfiguration value,
-            out string[] errors)
+        List<string> validationErrors = [];
+        string[] configuredSchoolUuids = configuration.GetSection("Somtoday:SchoolUUID").Get<string[]>() ?? [];
+        List<Guid> schoolUuids = [];
+        HashSet<Guid> uniqueSchoolUuids = [];
+
+        if (configuredSchoolUuids.Length == 0)
         {
-            List<string> validationErrors = [];
+            validationErrors.Add("Somtoday:SchoolUUID must be a non-empty array");
+        }
 
-            string[] configuredSchoolUuids = configuration.GetSection("Somtoday:SchoolUUID").Get<string[]>() ?? [];
-            List<Guid> schoolUuids = [];
-            HashSet<Guid> uniqueSchoolUuids = [];
-
-            if (configuredSchoolUuids.Length == 0)
+        foreach (string configuredSchoolUuid in configuredSchoolUuids)
+        {
+            if (!Guid.TryParse(configuredSchoolUuid, out Guid schoolUuid))
             {
-                validationErrors.Add("Somtoday:SchoolUUID must be a non-empty array");
+                validationErrors.Add($"Somtoday:SchoolUUID contains an invalid UUID: '{configuredSchoolUuid}'");
             }
-
-            foreach (string configuredSchoolUuid in configuredSchoolUuids)
+            else if (!uniqueSchoolUuids.Add(schoolUuid))
             {
-                if (!Guid.TryParse(configuredSchoolUuid, out Guid schoolUuid))
-                {
-                    validationErrors.Add($"Somtoday:SchoolUUID contains an invalid UUID: '{configuredSchoolUuid}'");
-                    continue;
-                }
-
-                if (!uniqueSchoolUuids.Add(schoolUuid))
-                {
-                    validationErrors.Add($"Somtoday:SchoolUUID contains a duplicate UUID: '{schoolUuid}'");
-                    continue;
-                }
-
+                validationErrors.Add($"Somtoday:SchoolUUID contains a duplicate UUID: '{schoolUuid}'");
+            }
+            else
+            {
                 schoolUuids.Add(schoolUuid);
             }
-
-            string clientId = configuration["Somtoday:ClientId"];
-            if (string.IsNullOrWhiteSpace(clientId))
-            {
-                validationErrors.Add("Somtoday:ClientId is missing");
-            }
-
-            string clientSecret = configuration["Somtoday:ClientSecret"];
-            if (string.IsNullOrWhiteSpace(clientSecret))
-            {
-                validationErrors.Add("Somtoday:ClientSecret is missing");
-            }
-
-            string configuredEnvironment = configuration["Somtoday:Environment"];
-            SomEnvironmentConfig somEnvironment = ParseEnvironment(configuredEnvironment, validationErrors);
-            if (!isDevelopment && ReferenceEquals(somEnvironment, SomEnvironmentConfig.Nightly))
-            {
-                validationErrors.Add("Somtoday:Environment NIGHTLY is allowed only in Development");
-            }
-
-            string blobServiceUri = configuration["Storage:AzureBlob:ServiceUri"];
-            string blobConnectionString = configuration["Storage:AzureBlob:ConnectionString"];
-            string blobContainer = configuration["Storage:AzureBlob:Container"];
-            string outputPrefix = configuration["Output:Folder"];
-
-            if (!isDevelopment && !string.IsNullOrWhiteSpace(blobConnectionString))
-            {
-                validationErrors.Add("Storage:AzureBlob:ConnectionString is allowed only in Development");
-            }
-
-            if (string.IsNullOrWhiteSpace(blobServiceUri) && !isDevelopment)
-            {
-                validationErrors.Add("Storage:AzureBlob:ServiceUri is required outside Development");
-            }
-            else if (string.IsNullOrWhiteSpace(blobServiceUri) && string.IsNullOrWhiteSpace(blobConnectionString))
-            {
-                validationErrors.Add("Storage:AzureBlob:ServiceUri or a Development connection string is required");
-            }
-            else if (!string.IsNullOrWhiteSpace(blobServiceUri)
-                && (!Uri.TryCreate(blobServiceUri, UriKind.Absolute, out Uri serviceUri)
-                    || serviceUri.Scheme != Uri.UriSchemeHttps))
-            {
-                validationErrors.Add("Storage:AzureBlob:ServiceUri must be an absolute HTTPS URI");
-            }
-
-            if (string.IsNullOrWhiteSpace(blobContainer))
-            {
-                validationErrors.Add("Storage:AzureBlob:Container is missing");
-            }
-
-            try
-            {
-                outputPrefix = BlobPathHelper.NormalizePrefix(outputPrefix);
-            }
-            catch (ArgumentException ex)
-            {
-                validationErrors.Add($"Output:Folder is invalid: {ex.Message}");
-            }
-
-            value = validationErrors.Count == 0
-                ? new SyncConfiguration(
-                    schoolUuids.ToArray(),
-                    clientId.Trim(),
-                    clientSecret.Trim(),
-                    somEnvironment,
-                    configuration.GetSection("Locations:IncludedLocationCodes").Get<string[]>() ?? [],
-                    configuration.GetSection("Locations:ExcludedLocationCodes").Get<string[]>() ?? [],
-                    blobServiceUri?.Trim(),
-                    blobConnectionString,
-                    blobContainer.Trim(),
-                    outputPrefix,
-                    configuration.GetValue<bool>("Output:GenerateEmptyCsv"),
-                    configuration.GetValue("Output:SeparateByInstitution", true),
-                    configuration.GetValue("Output:SeparateByLocation", false),
-                    configuration.GetValue<bool>("SchoolDataSync:EnableGuardianSync"))
-                : null;
-
-            errors = validationErrors.ToArray();
-            return validationErrors.Count == 0;
         }
 
-        private static SomEnvironmentConfig ParseEnvironment(string configuredEnvironment, List<string> errors)
+        string configuredInboundFlowId = configuration["SchoolDataSync:InboundFlowId"];
+        if (!Guid.TryParse(configuredInboundFlowId, out Guid inboundFlowId))
         {
-            if (string.IsNullOrWhiteSpace(configuredEnvironment))
-            {
-                errors.Add("Somtoday:Environment is missing");
-                return SomEnvironmentConfig.Prod;
-            }
-
-            return char.ToLowerInvariant(configuredEnvironment.Trim()[0]) switch
-            {
-                'a' => SomEnvironmentConfig.Acceptatie,
-                'n' => SomEnvironmentConfig.Nightly,
-                't' => SomEnvironmentConfig.Test,
-                'p' => SomEnvironmentConfig.Prod,
-                _ => AddInvalidEnvironmentError(configuredEnvironment, errors)
-            };
+            validationErrors.Add("SchoolDataSync:InboundFlowId must be a valid UUID");
         }
 
-        private static SomEnvironmentConfig AddInvalidEnvironmentError(string configuredEnvironment, List<string> errors)
+        string clientId = configuration["Somtoday:ClientId"];
+        if (string.IsNullOrWhiteSpace(clientId))
         {
-            errors.Add($"Somtoday:Environment is invalid: '{configuredEnvironment}'");
+            validationErrors.Add("Somtoday:ClientId is missing");
+        }
+
+        string clientSecret = configuration["Somtoday:ClientSecret"];
+        if (string.IsNullOrWhiteSpace(clientSecret))
+        {
+            validationErrors.Add("Somtoday:ClientSecret is missing");
+        }
+
+        SomEnvironmentConfig somEnvironment = ParseEnvironment(
+            configuration["Somtoday:Environment"],
+            validationErrors);
+        if (!isDevelopment && ReferenceEquals(somEnvironment, SomEnvironmentConfig.Nightly))
+        {
+            validationErrors.Add("Somtoday:Environment NIGHTLY is allowed only in Development");
+        }
+
+        value = validationErrors.Count == 0
+            ? new SyncConfiguration(
+                schoolUuids.ToArray(),
+                inboundFlowId,
+                clientId.Trim(),
+                clientSecret.Trim(),
+                somEnvironment,
+                configuration.GetSection("Locations:IncludedLocationCodes").Get<string[]>() ?? [],
+                configuration.GetSection("Locations:ExcludedLocationCodes").Get<string[]>() ?? [],
+                configuration.GetValue<bool>("Output:GenerateEmptyCsv"),
+                configuration.GetValue<bool>("SchoolDataSync:EnableGuardianSync"))
+            : null;
+
+        errors = validationErrors.ToArray();
+        return validationErrors.Count == 0;
+    }
+
+    private static SomEnvironmentConfig ParseEnvironment(string configuredEnvironment, List<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(configuredEnvironment))
+        {
+            errors.Add("Somtoday:Environment is missing");
             return SomEnvironmentConfig.Prod;
         }
+
+        return char.ToLowerInvariant(configuredEnvironment.Trim()[0]) switch
+        {
+            'a' => SomEnvironmentConfig.Acceptatie,
+            'n' => SomEnvironmentConfig.Nightly,
+            't' => SomEnvironmentConfig.Test,
+            'p' => SomEnvironmentConfig.Prod,
+            _ => AddInvalidEnvironmentError(configuredEnvironment, errors)
+        };
+    }
+
+    private static SomEnvironmentConfig AddInvalidEnvironmentError(string configuredEnvironment, List<string> errors)
+    {
+        errors.Add($"Somtoday:Environment is invalid: '{configuredEnvironment}'");
+        return SomEnvironmentConfig.Prod;
     }
 }

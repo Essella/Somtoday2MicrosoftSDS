@@ -1,88 +1,33 @@
 # Configuration guide
 
-This operator-facing guide describes configuration and current expression syntax. Intended export/publication behavior is authoritative in the focused contracts.
+.NET loads `appsettings.json`, the environment-specific JSON file, Development User Secrets, and environment variables in that order. Environment variables use `__` between sections. Command-line configuration is disabled; only the exact case-insensitive `--empty-csv` switch is recognized separately.
 
-## Current configuration sources and settings
-
-.NET configuration is loaded from `appsettings.json`, the environment-specific file, .NET User Secrets in Development, and environment variables. Later providers override earlier providers. Environment variables use `__` between sections, for example `Somtoday__ClientId`. Command-line values are deliberately not added as a configuration provider.
-
-| Setting | Production | Development |
-|---|---|---|
-| `DOTNET_ENVIRONMENT` | `Production` | Must be explicitly `Development` for local fallbacks |
-| `Somtoday__ClientSecret` | Required; supplied by the Container Apps Job secret | Required; use an environment variable or .NET User Secrets |
-| `Somtoday__ClientId` | Required | Required |
-| `Somtoday__SchoolUUID__0` and higher | At least one unique UUID | Same |
-| `Somtoday__Environment` | Full `PROD`, `TEST`, or `ACCEPTATIE` preferred | Same, plus `NIGHTLY` for local Development only |
-| `Storage__AzureBlob__ServiceUri` | Required absolute HTTPS URI | Optional absolute HTTPS URI; wins when supplied |
-| `Storage__AzureBlob__ConnectionString` | Prohibited | Allowed only when service URI is empty |
-| `Storage__AzureBlob__Container` | Required; default `sds` | Same |
-| `Output__Folder` | Default `sds/output` | Same |
-| `Output__GenerateEmptyCsv` | Default `false` | Same |
-| `Output__SeparateByInstitution` | Default `true` | Same |
-| `Output__SeparateByLocation` | Default `false` | Same |
-| `Locations__IncludedLocationCodes__0` and higher | Optional; empty means all | Same |
-| `Locations__ExcludedLocationCodes__0` and higher | Optional; exclusion wins | Same |
-| `UsernameFormat__Teacher` | Default `Emailadres` | Same |
-| `UsernameFormat__Student` | Default `Emailadres` | Same |
-| `SchoolDataSync__EnableGuardianSync` | Default `false` | Same |
-
-Full environment names are preferred for operator clarity. The parser intentionally uses only the first trimmed non-empty character, so minor spelling errors do not cause configuration failure while the four initials remain unique. NIGHTLY uses a plaintext HTTP data endpoint and is rejected unless `DOTNET_ENVIRONMENT=Development`; do not use real personal data with NIGHTLY.
-
-Somtoday institution authentication gets at most four total attempts. Network and HTTP timeout failures, HTTP 408, HTTP 429, and HTTP 5xx responses are retried after a cancellable two-second wait. Other HTTP 4xx responses and invalid token payloads fail immediately. Authentication bodies, access tokens, client secrets, and raw exception messages are not logged.
-
-The only supported command-line argument is the exact `--empty-csv` switch, matched case-insensitively; one or more occurrences enable header-only mode. All other arguments, including command-line-shaped configuration overrides and `--empty-csv=true`, are ignored without being logged. Use the configuration sources above for every setting.
-
-## Output layout
-
-| Setting | Default |
+| Setting | Required/default |
 |---|---|
-| `Output__SeparateByInstitution` | `true` |
-| `Output__SeparateByLocation` | `false` |
+| `Somtoday__SchoolUUID__0` and higher | Required non-empty array of unique institution UUIDs |
+| `Somtoday__ClientId` | Required |
+| `Somtoday__ClientSecret` | Required; use the Job secret or Development User Secrets |
+| `Somtoday__Environment` | `PROD` by default; `TEST` and `ACCEPTATIE` supported; `NIGHTLY` Development-only |
+| `SchoolDataSync__InboundFlowId` | Required UUID of exactly one SDS inbound flow |
+| `Locations__IncludedLocationCodes__0` and higher | Optional; empty means all locations |
+| `Locations__ExcludedLocationCodes__0` and higher | Optional; exclusion wins |
+| `UsernameFormat__Teacher` | `Emailadres` |
+| `UsernameFormat__Student` | `Emailadres` |
+| `SchoolDataSync__EnableGuardianSync` | `false` |
+| `Output__GenerateEmptyCsv` | `false` |
 
-Their output effects are defined only in the [publication contract](../contracts/PUBLICATION.md#output-grouping).
+Do not configure a connector ID or CSV version. The application resolves the connector from the inbound flow and maps `schoolDataSyncV1` to V1 and `schoolDataSyncV2Rev1` to V2.1. One run combines all successful configured schools into one complete selected-format dataset. A failed school is omitted, but makes the final exit code `1`.
 
-The first live path segment relative to `Output__Folder` cannot equal `.staging` in any casing. It is reserved for temporary application data at `{Output__Folder}/.staging/{RunId}/{FileName}`; it is not a V1- or V2.1-specific folder.
-
-There is no configuration or command-line option to enable, disable, or select an SDS version. Every planned scope always attempts both V1 and V2.1 from the same included population; version-specific publication units exist only to isolate failures.
-
-The default combines all eligible selected locations of each institution into one V1 and one V2.1 dataset. When public matching, discovery, output-layout validation, or data download fails for an institution and grouping combines institutions, the successfully resolved institution subset is still published and the run exits with code `1`. Conversion and upload failures block their complete SDS-version unit but do not suppress the mandatory attempt for the other version or another output scope.
-
-V1 emits a teacher or pupil once per included location. A person belonging to multiple locations therefore receives repeated V1 `SIS ID` values with different `School SIS ID` values, which Microsoft SDS may reject because it documents `SIS ID` as unique. V2.1 emits one user row with separate organization roles.
-
-## Institution and location selection
-
-Use the public production institution list to find UUIDs and abbreviations:
-
-```powershell
-Invoke-WebRequest -Uri 'https://api.somtoday.nl/rest/v1/connect/instelling'
-```
-
-The application retrieves that list once per run without authentication, even when synchronization uses another Somtoday environment. A configured UUID must occur exactly once and have a usable abbreviation. Failure to retrieve the list aborts the run before dataset publication; an invalid individual match fails that institution while other matched institutions remain eligible.
-
-Location codes are matched case-insensitively. With no inclusion list, every available location is selected. A selected location with a blank abbreviation is not silently discarded: output-layout validation fails that institution while other institutions remain eligible. With a non-empty inclusion list, a blank abbreviation cannot match and is not selected. Exclusions always take precedence for usable codes.
-
-`Storage__AzureBlob__ServiceUri` must use HTTPS in every environment because it is authenticated with `DefaultAzureCredential`. For local Azurite over HTTP, leave the service URI empty and use the Development-only connection string.
+Header-only mode is enabled by the setting, the exact `--empty-csv` argument, or July 31 in `Europe/Amsterdam`. It still resolves the connector and discovers configured schools before uploading the complete header-only set.
 
 ## Username expressions
 
-Teacher and pupil expressions are configured independently. A bare property becomes a user expression automatically: for example, `Emailadres` becomes `{user.Emailadres}`. Other direct values include teacher `Medewerkernummer` and pupil `Leerlingnummer`. A value already beginning with `{user.` and ending with `}` may contain multiple property expressions, literal separators, or supported Dynamic LINQ operations.
+A bare property such as `Emailadres` becomes `{user.Emailadres}`. Expressions may contain literals, multiple property expressions, and supported Dynamic LINQ operations, for example `{user.Emailadres.ToLower()}` or `{user.Voorletters}.{user.Achternaam}`. Treat expressions as trusted administrator configuration. Do not use BSN/ECK identifiers, phone numbers, dates, nested objects, or other sensitive fields.
 
-Treat these expressions as trusted administrator code, not as a sandbox for untrusted input. The parser's existing null and error behavior remains unchanged. All public properties on the generated teacher and pupil models remain technically reachable, but policy prohibits using BSN/ECK identifiers, phone numbers, dates, nested objects, or other sensitive or unsuitable values as a username or part of one.
+Teacher and pupil export is matching-only. Configure SDS not to create unmatched accounts.
 
-For a user with `Voorletters = J`, `Achternaam = Jansen`, `Gebruikersnaam = jjansen`, and `Emailadres = J.Jansen@School.nl`:
+## Authentication and secrets
 
-| Configured value | Result |
-|---|---|
-| `Emailadres` | `J.Jansen@School.nl` |
-| `Gebruikersnaam` | `jjansen` |
-| `{user.Voorletters}.{user.Achternaam}` | `J.Jansen` |
-| `{user.Emailadres.ToLower()}` | `j.jansen@school.nl` |
-| `{user.Voorletters + "." + user.Achternaam + "@school.nl"}` | `J.Jansen@school.nl` |
+Production Graph access uses `DefaultAzureCredential`, constrained by infrastructure to `ManagedIdentityCredential`. Local development may use any supported `DefaultAzureCredential` developer credential with the required Graph application permissions: `IndustryData-InboundFlow.ReadWrite.All`, `IndustryData-DataConnector.Upload`, and `IndustryData.ReadBasic.All`. Never track the Somtoday secret, Azure tokens, SAS URLs, or production data.
 
-Use only properties appropriate for the account type. Validate both formats with synthetic or appropriately governed representative users before production. The export is matching-only, so configure Microsoft SDS not to create unmatched teacher or pupil accounts.
-
-## Somtoday client secret
-
-`Somtoday__ClientSecret` is read directly from configuration and is required in every environment. The production Bicep deployment stores the secure `somtodayClientSecret` parameter as a Container Apps Job secret and maps it to this configuration key. Rotate the credential by redeploying with the replacement secure parameter value. Never store a real secret or production connection string in a tracked configuration file.
-
-Secret values and OAuth response bodies are not logged.
+Somtoday authentication has four total attempts and retries only network/timeouts, HTTP 408/429, and HTTP 5xx. Other 4xx responses and invalid token payloads fail immediately.

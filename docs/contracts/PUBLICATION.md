@@ -1,119 +1,89 @@
-# Publication contract
+# Direct SDS publication contract
 
-This document defines confirmed intended output grouping and Blob publication behavior. Current mismatches are listed only by ID in [the deviation register](../DEVIATIONS.md).
+This document defines confirmed intended behavior for resolving the SDS connector, uploading one complete dataset, and validating it. Current mismatches are listed by ID in [the deviation register](../DEVIATIONS.md).
 
-## Institution abbreviation source
+## Connector resolution and dataset format
 
-The public production endpoint at `https://api.somtoday.nl/rest/v1/connect/instelling` is the authoritative source of `Instelling.Afkorting` for the application and operators, even when synchronization data comes from TEST, ACCEPTATIE, or NIGHTLY. Retrieve this list once per run through a separate unauthenticated client and preserve application cancellation.
+`SchoolDataSync:InboundFlowId` is a required non-empty UUID. Retrieve its connector through Microsoft Graph beta:
 
-Each configured institution UUID must match exactly one public record whose abbreviation is valid for path planning. Use that public record's name and abbreviation for logging and paths. A missing, duplicate, or invalid match fails only that institution. If retrieval of the complete public list fails, abort the run before publishing any SDS dataset.
+```text
+GET https://graph.microsoft.com/beta/external/industryData/inboundFlows/{InboundFlowId}/dataConnector
+```
 
-## Output grouping
+The response must have a non-empty UUID `id`, `@odata.type` equal to `#microsoft.graph.industryData.azureDataLakeConnector`, and one supported `fileFormat.code`:
 
-Two independent Boolean settings control dataset scope:
+| Connector code | Dataset |
+|---|---|
+| `schoolDataSyncV1` | SDS V1 |
+| `schoolDataSyncV2Rev1` | SDS V2.1 |
 
-- `Output:SeparateByInstitution`, default `true`.
-- `Output:SeparateByLocation`, default `false`.
+The returned `id` is the `ConnectorId`. It remains distinct from `InboundFlowId` even if their UUID text happened to be equal. `ConnectorId` is not a configuration setting. Missing, malformed, unsupported, or unsuccessful connector responses stop the run before Somtoday data is uploaded.
 
-Paths below the configured `Output:Folder` prefix are:
+Microsoft Graph Industry Data APIs used here are available only under `/beta`, can change without notice, and are not supported by Microsoft for production use. Operators accept this platform risk when deploying the application.
 
-| Per institution | Per location | Path | Dataset scope |
-|---|---|---|---|
-| `false` | `false` | `v1|v2/{FileName}` | One dataset per SDS version aggregating every configured institution and selected location |
-| `true` | `false` | `{InstitutionAfkorting}/v1|v2/{FileName}` | One dataset per institution and SDS version, aggregating selected locations; default |
-| `false` | `true` | `{LocationAfkorting}/v1|v2/{FileName}` | One dataset per location abbreviation and SDS version |
-| `true` | `true` | `{InstitutionAfkorting}/{LocationAfkorting}/v1|v2/{FileName}` | One dataset per selected location and SDS version under its institution |
+The runtime identity has `IndustryData-InboundFlow.ReadWrite.All` for inbound-flow and related connector access, `IndustryData-DataConnector.Upload` for the upload session and validation action, and `IndustryData.ReadBasic.All` for reading the validation operation returned in `Location`. This follows Microsoft's automated CSV upload permission model while retaining the additional operation-read permission required by this application's validation polling.
 
-Every planned output scope always schedules and attempts both the `v1` and `v2` publication units from the same included locations. The layout settings change only institution/location grouping; they cannot select, disable, or exclude an SDS version.
+## One publication unit per run
 
-Slash and backslash characters in abbreviations become `_`. Paths are compared case-insensitively.
+One Job run builds at most one dataset, in the version selected by the connector. All successfully resolved Somtoday institutions and their eligible selected locations are aggregated in configuration order.
 
-The first live segment relative to `Output:Folder` must not equal `.staging` in any casing. That segment is reserved for application staging. If institution or location grouping would create such a live scope, output-layout validation fails only the affected institution through the existing institution failure boundary.
+Institution discovery or download failures are isolated: the failed institution is omitted, successfully resolved institutions remain eligible for the combined dataset, and the final process exit code is `1`. If no institution remains, no upload session is requested. Normal mode also skips publication without failure when the successful population contains no exportable location. Header-only mode builds the selected format's complete header-only set after at least one institution was discovered successfully.
 
-An institution folder is named from the matching public `Instelling.Afkorting`; a location folder is named from `Vestiging.Afkorting`.
+Serialize the complete dataset to memory before requesting an upload session. Guardian files are present when guardian sync is enabled, including when they contain headers only. A serialization or conversion error results in no upload session and a nonzero exit code.
 
-Every selected location must have a non-empty abbreviation after trimming. With an empty inclusion list, a location with a blank abbreviation remains selected and output-layout validation fails only its institution; it is not silently omitted. With a non-empty inclusion list, a blank abbreviation cannot match and remains unselected.
+## Upload session and SAS URI
 
-When institution separation is disabled and equal sanitized location abbreviations occur in different institutions, only the colliding folders are named `{InstitutionAfkorting}_{LocationAfkorting}`. Other unresolved output-path conflicts fail the affected institution.
+Request exactly one new upload session for the dataset:
 
-Plan location folder names from all selected locations before normal-mode population eligibility is evaluated. A location therefore keeps its planned folder name when another selected location is later omitted or its institution fails during data download.
+```text
+GET https://graph.microsoft.com/beta/external/industryData/dataConnectors/{ConnectorId}/microsoft.graph.industryData.azureDataLakeConnector/getUploadSession?resetSession=true
+```
 
-If public matching, institution discovery, output-layout validation, or data download fails for an institution, omit that institution from combined publication scopes, continue with the successfully resolved subset, and fail the run. Publishing a successful subset can remove the failed institution's earlier rows from a combined live dataset.
+The response must be `200 OK` and contain an absolute HTTPS `sessionUrl` with a non-empty querystring. The URL and every value derived from it are secrets and must never be logged.
 
-## Population eligibility and retained output
+For each dataset file, append one URL-escaped file-name segment to the session container path before the original `?`. Preserve the original SAS querystring exactly, including ordering and escaping. Reject empty file names, nested paths, fragments, non-HTTPS URLs, or URLs without a SAS querystring.
 
-Normal-mode datasets contain only locations with at least one exportable class under the [export population rules](EXPORT.md#class-and-person-population). When grouping combines multiple locations, ineligible locations are omitted while eligible locations are still published. If no location remains in a publication unit, the application logs a warning and skips the unit without staging, promotion, deletion, or run failure. Existing live output for a skipped unit remains unchanged.
+## Complete BlockBlob upload
 
-Header-only mode is exempt from normal-mode population eligibility and publishes every selected scope.
+Upload files sequentially in the dataset's defined order. Use the Azure Storage `Put Blob` REST operation for one complete BlockBlob:
 
-## Grouped dataset assembly
+```text
+PUT {session-container}/{escaped-file-name}?{original-sas-query}
+```
 
-Transform all included locations in publication-plan order into one dataset. V1 and V2.1 apply the grouped identity rules in the [export contract](EXPORT.md#grouped-dataset-identities). Exact duplicate relationship, role, roster, and enrollment rows are emitted once.
+Each request contains exactly the serialized CSV bytes and these headers:
 
-If different Somtoday classes map case-insensitively to the same SDS class identifier, generation of the affected SDS-version publication unit fails and its existing live output remains unchanged. Do not alter the identifier automatically.
+- `Content-Type: application/vnd.ms-excel`
+- `Content-Length: <exact byte count>`
+- `x-ms-version: 2023-11-03`
+- `x-ms-blob-content-type: application/vnd.ms-excel`
+- `x-ms-blob-type: BlockBlob`
+- `x-ms-meta-uploadvia: PortalUpload`
 
-Conversion and upload results are failure-isolated per planned scope and SDS version. A conversion failure blocks that complete publication unit; a conversion or upload failure marks every participating institution as failed and does not prevent the mandatory attempt for the other SDS version or another output scope.
+Only `201 Created` is success. Stop after the first failed file and do not call validation. The temporary SDS-owned container expires according to the upload-session response; the application does not delete, promote, version, retain, or roll back its contents.
 
-## Publication unit and staging
+## Validation
 
-Each mandatory SDS-version dataset from the table is a separate, failure-isolated publication unit. This separation does not make either version optional.
+After every file returns `201 Created`, start validation with no request content or JSON body:
 
-1. Generate its complete CSV set successfully in memory.
-2. Assign the same metadata to every file:
-   - `syncidproducer=Somtoday2MicrosoftSDS`
-   - `syncidrunutc=<the job's UTC ISO-8601 run timestamp>`
-   - `syncidsdsversion=v1|v2`
-   - `syncidguardians=true|false`
-3. Create one UUIDv7 `RunId` when the application run starts and upload the complete set once to `{Output:Folder}/.staging/{RunId}/{FileName}` before overwriting live output. There is one shared staging root directly below the normalized output prefix; it is not split by live scope, SDS V1, or SDS V2.1.
-4. Promote each staged file to its known live name with a server-side Blob copy.
+```text
+POST https://graph.microsoft.com/beta/external/industryData/dataConnectors/{ConnectorId}/validate
+```
 
-Do not add Blob Index Tags. The four metadata values above are the complete application metadata contract.
+Require `202 Accepted` and an absolute HTTPS `Location` URL hosted by `graph.microsoft.com`. Poll that URL with authenticated `GET` requests no more frequently than every five seconds and stop after thirty minutes.
 
-`LivePrefix` determines only the promotion and rollback destination. Publication is sequential within one process: one dataset is completely staged and promoted, and its cleanup processing finishes, before the next scope or SDS version starts. Consecutive datasets can therefore reuse the same staging names. Every dataset uploads and overwrites all of its required staging files before any of them is promoted, including when cleanup of the preceding dataset failed. A remaining file is never promoted as part of another dataset without that new upload.
+Interpret validation status case-insensitively:
 
-Promotion gets one initial attempt plus three complete-set retries. Every retry starts again with the first promotion action; staging is not uploaded again. Use the Azure Blob SDK's default retries and timeouts without an application timeout, delay, or snapshot layer. A successful promotion can temporarily expose old and new files during the same run.
+- `notStarted` and `running`: continue polling;
+- `succeeded`: success;
+- `failed`, `unknownFutureValue`, missing values, and any unrecognized future value: failure.
 
-A staging or conversion failure marks the affected dataset and its participating institutions as failed while leaving live output unchanged. It does not suppress the mandatory attempt for another SDS version or later scope. Application cancellation stops immediately without rollback. No success-marker Blob is used.
+Validation errors and warnings can contain source detail. Log only safe counts and the terminal status, never response bodies, status detail, error objects, warning objects, validated file collections, or resource URLs.
 
-Staging is temporary work data for only the current application run and the dataset then being promoted. A later run and rollback must never depend on it. Recognize a Blob as application-owned staging only when its path ends in the exact lowercase segment structure `.staging/{RunId}/{FileName}`, `RunId` is a compact UUIDv7, `FileName` is one non-empty path segment, and the producer metadata has the exact application value. Startup cleanup recognizes both the current output-root path and legacy `{LivePrefix}/.staging/{RunId}/{FileName}` paths through that exact tail and metadata rule, so existing remnants need no manual migration. Other lookalikes are left untouched.
+## Retry, timeout, and failure behavior
 
-Delete the dataset's staging files after successful promotion or completed error handling. Cleanup gets one initial complete attempt plus three complete retries, without an application delay and while retaining Azure SDK defaults. Every attempt tries every known staging Blob even when an individual deletion fails. Exhausted cleanup logs one safe warning only: it does not roll back live output, change a successful `DatasetPublicationResult`, fail participating institutions, suppress later SDS versions or scopes, or replace an existing publication, rollback, or cancellation failure.
+Graph calls, SAS uploads, and validation polls get at most four total HTTP attempts per request. Retry only network/HTTP timeout failures, HTTP 408, HTTP 429, and HTTP 5xx. Do not retry other 4xx, redirects, malformed payloads, or protocol failures.
 
-At startup, apply the same four-attempt best-effort policy to all recognized application-owned staging Blobs left by an aborted run. Exhausted startup cleanup logs a warning and the new run continues because the new run uses its own `RunId`. Staging that remains may be ignored and retried at a later startup. Application cancellation stops cleanup immediately and is never converted into a cleanup warning. Runs must not overlap: startup cleanup is allowed to remove another run's staging data, so overlapping runs are unsupported.
+Before a retry, use `Retry-After` as either delta-seconds or an HTTP date. Without a valid value, wait two seconds. Every request and delay preserves application cancellation. The thirty-minute validation deadline also cancels polling and retry delays.
 
-## Infrastructure staging retention
-
-The supplied infrastructure normalizes `Output:Folder` by trimming outer whitespace, converting backslashes to slashes, removing empty segments, trimming individual segments, and rejecting `.` and `..`. It uses that same value for both runtime `Output__Folder` and lifecycle prefix `{Container}/{NormalizedOutputFolder}/.staging/`.
-
-For block Blobs below that prefix, lifecycle management makes the current base Blob eligible for deletion after more than one day since modification and previous staging versions eligible for deletion after more than one day since creation. Azure lifecycle processing is asynchronous: one day is an eligibility boundary, not an exact deletion time. The general seven-day retention for previous live Blob versions and the seven-day Blob soft-delete period remain in force. A lifecycle-deleted staging Blob can consequently remain temporarily recoverable, but the application assigns it no functional value.
-
-The lifecycle rule uses its path prefix and Blob type only, without a Blob Index Tag filter. If an operator manually overrides runtime `Output__Folder`, the lifecycle policy must be redeployed with the same value; otherwise runtime staging and infrastructure retention diverge.
-
-## Complete-set rollback from base Blobs and Blob versions
-
-[Blob versioning](https://learn.microsoft.com/en-us/azure/storage/blobs/versioning-overview) must be enabled for the output storage account. Promotion does not inspect existing live files, metadata, or version IDs. Manually initialized or corrected live files are therefore overwritten normally.
-
-Only after all four promotion attempts fail, list base Blobs and versions for the dataset's known live file names. Staging is never enumerated or selected for rollback. A listed live item is an eligible rollback source only when all four application metadata values are present and valid. Exclude the current failed run, group older sources by run timestamp, SDS version, and guardian setting, and select the newest older group that is complete. If retries created multiple sources for one file and run timestamp, select the source with the newest Blob last-modified timestamp and then the newest parseable version timestamp.
-
-A complete group contains:
-
-- V1: `School.csv`, `Section.csv`, `Teacher.csv`, `Student.csv`, `TeacherRoster.csv`, and `StudentEnrollment.csv`, plus `User.csv` and `Guardianrelationship.csv` when that group has guardian sync enabled.
-- V2.1: `orgs.csv`, `users.csv`, `roles.csv`, `classes.csv`, and `enrollments.csv`, plus `relationships.csv` when that group has guardian sync enabled.
-
-The exact V1 file-name casing shown above is a stable part of this contract and has been confirmed accepted by SDS.
-
-Both base Blobs and versioned Blobs can be rollback sources when their metadata is valid. A selected versioned source is copied to its live name. A selected versionless base Blob is already the live file and restoration is a no-op only when its name exactly equals that destination; it cannot be copied as a historical source. When the chosen group has guardian sync disabled, remove the known guardian-specific live files. Unknown files and sources without valid application metadata are never rollback sources and are not automatically removed.
-
-If no complete older application set exists, restore nothing, fail fatally, and do not process later datasets. If an individual restore or guardian-removal action fails, attempt the remaining rollback actions and then fail fatally. After a complete successful rollback, only the affected dataset and its participating institutions are failed; processing continues with later SDS versions and scopes.
-
-## Guardian file lifecycle
-
-When guardian sync is disabled, remove these previously published files from every affected destination:
-
-- V1 `User.csv`
-- V1 `Guardianrelationship.csv`
-- V2.1 `relationships.csv`
-
-When guardian sync is enabled but produces no guardian or relationship records, publish the guardian-specific files with headers only.
-
-Automatic published-output cleanup is otherwise intentionally limited. Output belonging to renamed, removed, newly excluded, or normal-mode-ineligible institutions and locations is retained when its complete publication unit is skipped.
+Connector, upload-session, file-upload, validation-start, validation-poll, timeout, and cancellation failures produce process exit code `1`. Safe logs may contain endpoint operation names, file names, attempt counts, numeric HTTP status, connector/inbound-flow identifiers, and exception types; they must not contain authorization headers, access tokens, Somtoday secrets, SAS material, response bodies, CSV values, or personal identifiers.
