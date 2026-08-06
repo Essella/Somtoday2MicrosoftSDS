@@ -15,3 +15,4 @@ These instructions apply to the entire repository.
 11. Never add secrets, tokens, connection strings, authentication bodies, personal data, production CSV files, or unsafe exception detail to code, tests, documentation, or logs.
 12. Preserve cancellation for token acquisition, network requests, retries, SAS uploads, and validation polling. Follow `SECURITY.md` for security/privacy work and keep tracked configuration non-sensitive.
 13. Write repository documentation and contributor instructions in English, except for `README.md`, which is deliberately maintained in Dutch for operators.
+14. In normative documentation, interpret and apply RFC 2119 key words according to RFC 8174 (only when they appear in all capitals). Write controlled technical prose in ASD-STE100 Simplified Technical English where practical.

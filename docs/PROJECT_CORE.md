@@ -67,3 +67,5 @@ Confirmed intended scope includes multiple Somtoday institutions per Job, locati
 - Update the relevant contract when intended behavior changes and architecture when ownership, data flow, or side-effect boundaries change.
 - Add or update a stable deviation ID when implementation and confirmed intent differ. Resolved IDs remain historical and are never reused.
 - Keep `README.md` in Dutch. All other repository documentation and contributor instructions are English.
+- In normative text, interpret RFC 2119 key words using RFC 8174 semantics (only when the words are in all capitals).
+- Prefer ASD-STE100 Simplified Technical English for technical and contributor documentation where practical.
