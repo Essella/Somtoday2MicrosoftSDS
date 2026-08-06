@@ -70,6 +70,73 @@ jobs:
           -p:InformationalVersion=${{ needs.version.outputs.version }}
           -p:ContinuousIntegrationBuild=true
 
+  csv-bootstrap-generate:
+    name: Generate CSV bootstrap zips
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+
+      - name: Generate all CSV bootstrap sets
+        shell: pwsh
+        run: |
+          $outputRoot = Join-Path $PWD 'artifacts/sds-bootstrap-csv'
+          ./scripts/generate-empty-csv-files.ps1 -Version all -Guardians both -OutputPath $outputRoot
+
+      - name: Zip generated CSV sets
+        shell: pwsh
+        run: |
+          $outputRoot = Join-Path $PWD 'artifacts/sds-bootstrap-csv'
+
+          Get-ChildItem -Path $outputRoot -Directory | ForEach-Object {
+            $zipPath = Join-Path $outputRoot "$($_.Name).zip"
+            Compress-Archive -Path (Join-Path $_.FullName '*') -DestinationPath $zipPath -CompressionLevel Optimal -Force
+            Write-Host "Created: $zipPath"
+          }
+
+      - name: Upload CSV zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: csv-bootstrap-zips
+          path: artifacts/sds-bootstrap-csv/*.zip
+          if-no-files-found: error
+
+  csv-bootstrap-assets:
+    name: Publish CSV bootstrap assets
+    needs: [version, test, csv-bootstrap-generate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download CSV zip artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: csv-bootstrap-zips
+          path: artifacts/sds-bootstrap-csv
+
+      - name: Upload CSV zip assets to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $outputRoot = Join-Path $PWD 'artifacts/sds-bootstrap-csv'
+          $zipFiles = Get-ChildItem -Path $outputRoot -Filter '*.zip' | Sort-Object Name
+
+          if ($zipFiles.Count -eq 0) {
+            throw 'No CSV zip files were generated.'
+          }
+
+          $arguments = @('release', 'upload', $env:RELEASE_TAG, '--clobber')
+          $arguments += $zipFiles.FullName
+
+          & gh @arguments
+
   container-image:
     name: Publish container image
     needs: [version, test]

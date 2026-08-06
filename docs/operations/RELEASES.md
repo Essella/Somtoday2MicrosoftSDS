@@ -1,20 +1,30 @@
 # Release guide
 
-## Supported artifact
+## Supported artifacts
 
-The supported release artifact is:
+The supported release artifacts are:
 
 ```text
 ghcr.io/essella/somtoday2microsoftsds:VERSION
+CSV bootstrap zip assets attached to the GitHub Release
 ```
 
 The current container workflow targets `linux/amd64`, requests an SBOM attestation, and creates a build-provenance attestation. A Windows application archive is not supported.
+
+CSV bootstrap zip assets are generated during the release workflow (not stored as tracked repository files). They exist to support one-time SDS connector bootstrap: administrators can upload a header-only CSV set that matches the chosen SDS connector variant, including environments where local script execution is restricted.
 
 The project owner generated the tracked client code with Visual Studio and confirms that no additional redistribution approval is required. The repository is new and has never contained a committed secret; a full-history secret scan is not a release prerequisite.
 
 ## Versioning and tags
 
 Create a GitHub Release with a four-part tag such as `v1.2.3.4`. Every component must be between 0 and 65534. The release version is used for application metadata and the container tag. The workflow also publishes `sha-COMMIT` and `latest` tags.
+
+Each GitHub Release also publishes four CSV bootstrap zip assets:
+
+- `v1-no-guardians.zip`
+- `v1-with-guardians.zip`
+- `v2-no-guardians.zip`
+- `v2-with-guardians.zip`
 
 Local builds default to `0.0.0.0`. Pin production to a release tag or digest rather than `latest`.
 

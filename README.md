@@ -22,6 +22,28 @@ Als één Somtoday-instelling mislukt, wordt de succesvolle subset wel als één
 
 Er is geen permanente Blob Storage, staging, rollback of Power Automate-flow. De applicatie maakt ook geen SDS-inbound flow of connector aan.
 
+## Eerste inrichting van SDS-connector (lege CSV-templates)
+
+Voor de eerste inrichting van een nieuwe SDS CSV-connector uploadt de beheerder eenmalig een lege CSV-set (alleen headers) die past bij de gewenste connectorvariant.
+
+Daarna is de connectorstructuur vastgelegd en levert deze applicatie bij volgende runs automatisch bestanden in het juiste formaat op basis van de connector (`schoolDataSyncV1` of `schoolDataSyncV2Rev1`).
+
+Er zijn twee manieren om de lege CSV-set te verkrijgen:
+
+- Genereren met script:
+	- PowerShell: `scripts/generate-empty-csv-files.ps1`
+	- Python: `scripts/generate_empty_csv_files.py`
+	- Zonder parameters werken beide scripts interactief met prompts.
+	- Met parameters hebben parameterwaarden voorrang op promptinvoer.
+- Downloaden als release-assets:
+	- Bij elke GitHub Release worden automatisch vier zipbestanden gepubliceerd:
+		- `v1-no-guardians.zip`
+		- `v1-with-guardians.zip`
+		- `v2-no-guardians.zip`
+		- `v2-with-guardians.zip`
+
+Kies precies de set die past bij de connector die je wilt aanmaken en upload die set eenmalig in School Data Sync.
+
 ## Vereisten
 
 - Somtoday Connect-client-ID, clientsecret en minstens één instellings-UUID.
