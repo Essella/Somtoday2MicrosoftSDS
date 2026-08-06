@@ -66,7 +66,6 @@ param excludedLocationCodes array = []
 param enableGuardianSync bool = false
 param teacherUsernameFormat string = 'Emailadres'
 param studentUsernameFormat string = 'Emailadres'
-param generateEmptyCsv bool = false
 
 var normalizedPrefix = toLower(namePrefix)
 var logAnalyticsName = '${normalizedPrefix}-logs'
@@ -142,10 +141,6 @@ var baseEnvironmentVariables = [
   {
     name: 'SchoolDataSync__InboundFlowId'
     value: validatedInboundFlowId
-  }
-  {
-    name: 'Output__GenerateEmptyCsv'
-    value: string(generateEmptyCsv)
   }
   {
     name: 'SchoolDataSync__EnableGuardianSync'

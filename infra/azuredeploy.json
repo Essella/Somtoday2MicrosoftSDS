@@ -134,10 +134,6 @@
     "studentUsernameFormat": {
       "type": "string",
       "defaultValue": "Emailadres"
-    },
-    "generateEmptyCsv": {
-      "type": "bool",
-      "defaultValue": false
     }
   },
   "variables": {
@@ -200,10 +196,6 @@
       {
         "name": "SchoolDataSync__InboundFlowId",
         "value": "[variables('validatedInboundFlowId')]"
-      },
-      {
-        "name": "Output__GenerateEmptyCsv",
-        "value": "[string(parameters('generateEmptyCsv'))]"
       },
       {
         "name": "SchoolDataSync__EnableGuardianSync",

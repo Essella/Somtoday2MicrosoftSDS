@@ -10,7 +10,6 @@ internal sealed record SyncConfiguration(
     SomEnvironmentConfig SomEnvironment,
     string[] IncludedLocationCodes,
     string[] ExcludedLocationCodes,
-    bool GenerateEmptyCsv,
     bool EnableGuardianSync)
 {
     internal static bool TryCreate(
@@ -80,7 +79,6 @@ internal sealed record SyncConfiguration(
                 somEnvironment,
                 configuration.GetSection("Locations:IncludedLocationCodes").Get<string[]>() ?? [],
                 configuration.GetSection("Locations:ExcludedLocationCodes").Get<string[]>() ?? [],
-                configuration.GetValue<bool>("Output:GenerateEmptyCsv"),
                 configuration.GetValue<bool>("SchoolDataSync:EnableGuardianSync"))
             : null;
 

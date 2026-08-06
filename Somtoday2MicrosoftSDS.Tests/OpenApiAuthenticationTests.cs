@@ -426,7 +426,6 @@ public class OpenApiAuthenticationTests
             SomEnvironmentConfig.Prod,
             [],
             [],
-            false,
             false);
     }
 

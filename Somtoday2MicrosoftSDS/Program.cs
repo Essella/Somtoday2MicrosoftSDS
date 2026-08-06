@@ -19,13 +19,9 @@ internal class Program
         OpenAPIHelper Api,
         List<Vestiging> Locations);
 
-    internal static bool ShouldGenerateEmptyCsv(string[] args, bool configuredGenerateEmptyCsv, DateOnly today)
+    internal static bool ShouldUseHeaderOnlyMode(DateOnly today)
     {
-        bool requestedByArgument = args.Any(arg =>
-            string.Equals(arg, "--empty-csv", StringComparison.OrdinalIgnoreCase));
-        return configuredGenerateEmptyCsv
-            || requestedByArgument
-            || today is { Month: 7, Day: 31 };
+        return today is { Month: 7, Day: 31 };
     }
 
     internal static HostApplicationBuilder CreateHostApplicationBuilder()
@@ -92,7 +88,7 @@ internal class Program
                 "Resolved the SDS connector; this run will create one {SdsFormat} dataset",
                 connector.Format == SdsDatasetFormat.V1 ? "V1" : "V2.1");
 
-            bool generateEmptyCsv = ShouldGenerateEmptyCsv(args, configuration.GenerateEmptyCsv, runDate);
+            bool useHeaderOnlyMode = ShouldUseHeaderOnlyMode(runDate);
             HashSet<Guid> failedSchools = [];
             List<SchoolSyncContext> schools = [];
             IReadOnlyList<Instelling> publicInstitutions = await OpenAPIHelper.GetPublicInstitutionsAsync(
@@ -136,7 +132,7 @@ internal class Program
             }
 
             PublicationDataset dataset;
-            if (generateEmptyCsv)
+            if (useHeaderOnlyMode)
             {
                 _logger.LogInformation("Generating one complete SDS dataset with headers only");
                 dataset = CreateEmptyDataset(

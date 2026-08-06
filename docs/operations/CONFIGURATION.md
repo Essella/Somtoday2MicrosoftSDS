@@ -1,6 +1,6 @@
 # Configuration guide
 
-.NET loads `appsettings.json`, the environment-specific JSON file, Development User Secrets, and environment variables in that order. Environment variables use `__` between sections. Command-line configuration is disabled; only the exact case-insensitive `--empty-csv` switch is recognized separately.
+.NET loads `appsettings.json`, the environment-specific JSON file, Development User Secrets, and environment variables in that order. Environment variables use `__` between sections. Command-line configuration is disabled.
 
 | Setting | Required/default |
 |---|---|
@@ -14,11 +14,10 @@
 | `UsernameFormat__Teacher` | `Emailadres` |
 | `UsernameFormat__Student` | `Emailadres` |
 | `SchoolDataSync__EnableGuardianSync` | `false` |
-| `Output__GenerateEmptyCsv` | `false` |
 
 Do not configure a connector ID or CSV version. The application resolves the connector from the inbound flow and maps `schoolDataSyncV1` to V1 and `schoolDataSyncV2Rev1` to V2.1. One run combines all successful configured schools into one complete selected-format dataset. A failed school is omitted, but makes the final exit code `1`.
 
-Header-only mode is enabled by the setting, the exact `--empty-csv` argument, or July 31 in `Europe/Amsterdam`. It still resolves the connector and discovers configured schools before uploading the complete header-only set.
+Header-only mode is enabled automatically on July 31 in `Europe/Amsterdam`. It still resolves the connector and discovers configured schools before uploading the complete header-only set.
 
 ## Username expressions
 

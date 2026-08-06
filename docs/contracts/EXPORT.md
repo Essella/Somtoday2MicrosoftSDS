@@ -7,7 +7,7 @@ This document defines confirmed intended SDS transformation behavior. External S
 - The related SDS connector selects exactly one format per run: `schoolDataSyncV1` produces V1 and `schoolDataSyncV2Rev1` produces V2.1. There is no local format setting.
 - Both formats use the same population rules. All successful configured institutions and their eligible locations are combined into one complete dataset.
 - Normal mode includes a location only when its resolved population contains at least one exportable class. Upload is skipped when no eligible location remains. A no-data skip is not a run failure unless a configured institution failed.
-- Header-only mode emits all required files with headers and no data rows. It is enabled by `Output:GenerateEmptyCsv`, `--empty-csv`, or automatically on July 31 in `Europe/Amsterdam` time.
+- Header-only mode emits all required files with headers and no data rows. It is enabled automatically on July 31 in `Europe/Amsterdam` time.
 
 ## CSV wire contract
 

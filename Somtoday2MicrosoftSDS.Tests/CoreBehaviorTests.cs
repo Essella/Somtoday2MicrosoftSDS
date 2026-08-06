@@ -99,13 +99,11 @@ public sealed class CoreBehaviorTests
     }
 
     [Theory]
-    [InlineData("--empty-csv", 1, 1, true)]
-    [InlineData("", 7, 31, true)]
-    [InlineData("", 7, 30, false)]
-    public void EmptyCsvModeUsesArgumentOrFixedYearEnd(string argument, int month, int day, bool expected)
+    [InlineData(7, 31, true)]
+    [InlineData(7, 30, false)]
+    public void EmptyCsvModeUsesOnlyFixedYearEnd(int month, int day, bool expected)
     {
-        string[] args = string.IsNullOrEmpty(argument) ? [] : [argument];
-        Assert.Equal(expected, Program.ShouldGenerateEmptyCsv(args, false, new DateOnly(2026, month, day)));
+        Assert.Equal(expected, Program.ShouldUseHeaderOnlyMode(new DateOnly(2026, month, day)));
     }
 
     [Fact]
@@ -136,7 +134,6 @@ public sealed class CoreBehaviorTests
             ["Somtoday:ClientSecret"] = "client-secret",
             ["Somtoday:SchoolUUID:0"] = SchoolId.ToString(),
             ["SchoolDataSync:InboundFlowId"] = FlowId.ToString(),
-            ["Output:GenerateEmptyCsv"] = "false",
             ["SchoolDataSync:EnableGuardianSync"] = "false"
         };
         foreach ((string key, string value) in overrides)
