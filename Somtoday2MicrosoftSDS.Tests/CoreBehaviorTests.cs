@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Somtoday2MicrosoftSDS.Helpers;
@@ -74,6 +75,30 @@ public sealed class CoreBehaviorTests
         Assert.Contains(schoolErrors, error => error.Contains("empty UUID", StringComparison.Ordinal));
         Assert.False(SyncConfiguration.TryCreate(emptyFlow, true, out _, out string[] flowErrors));
         Assert.Contains(flowErrors, error => error.Contains("non-empty UUID", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ConfigurationPreservesAnOpaqueClientSecretExactly()
+    {
+        const string secret = "  significant-secret-value  ";
+        IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
+        {
+            ["Somtoday:ClientSecret"] = secret
+        });
+
+        Assert.True(SyncConfiguration.TryCreate(
+            configuration,
+            true,
+            out SyncConfiguration result,
+            out string[] errors),
+            string.Join(Environment.NewLine, errors));
+        Assert.Equal(secret, result.ClientSecret);
+
+        IConfiguration whitespaceOnly = CreateConfiguration(new Dictionary<string, string>
+        {
+            ["Somtoday:ClientSecret"] = " \t "
+        });
+        Assert.False(SyncConfiguration.TryCreate(whitespaceOnly, true, out _, out _));
     }
 
     [Fact]
@@ -157,14 +182,27 @@ public sealed class CoreBehaviorTests
             source => source.GetType().FullName?.Contains("CommandLine", StringComparison.OrdinalIgnoreCase) == true);
     }
 
-    [Fact]
-    public void SdsHttpClientsDisableAutomaticRedirects()
+    [Theory]
+    [InlineData(Program.SdsGraphHttpClientName)]
+    [InlineData(Program.SdsUploadHttpClientName)]
+    [InlineData(Program.SomtodayAuthenticationHttpClientName)]
+    [InlineData(Program.SomtodayApiHttpClientName)]
+    [InlineData(Program.SomtodayPublicHttpClientName)]
+    public void ConfiguredHttpClientsDisableAutomaticRedirects(string clientName)
     {
-        using SocketsHttpHandler graphHandler = Program.CreateNoRedirectHandler();
-        using SocketsHttpHandler uploadHandler = Program.CreateNoRedirectHandler();
+        HostApplicationBuilder builder = Program.CreateHostApplicationBuilder();
+        using IHost host = builder.Build();
+        IHttpMessageHandlerFactory handlerFactory = host.Services
+            .GetRequiredService<IHttpMessageHandlerFactory>();
 
-        Assert.False(graphHandler.AllowAutoRedirect);
-        Assert.False(uploadHandler.AllowAutoRedirect);
+        HttpMessageHandler handler = handlerFactory.CreateHandler(clientName);
+        while (handler is DelegatingHandler delegatingHandler)
+        {
+            handler = delegatingHandler.InnerHandler;
+        }
+
+        SocketsHttpHandler socketsHandler = Assert.IsType<SocketsHttpHandler>(handler);
+        Assert.False(socketsHandler.AllowAutoRedirect);
     }
 
     [Fact]

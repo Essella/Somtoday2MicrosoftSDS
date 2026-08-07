@@ -4,7 +4,7 @@
 
 - `Program` owns the one-shot run, school-level failure isolation, successful-subset aggregation, selected-format conversion, publication sequencing, and final exit code.
 - `SyncConfiguration` validates one inbound-flow UUID, one or more unique Somtoday institution UUIDs, credentials, location filters, username rules, guardian mode, and header-only mode.
-- `OpenAPIHelper` owns Somtoday authentication and reads. It preserves cancellation and the existing bounded authentication retries.
+- `OpenAPIHelper` owns Somtoday authentication and reads. It uses separate no-redirect clients for authentication, public discovery, and authenticated data, and it preserves cancellation and the existing bounded authentication retries.
 - `ExportPopulationResolver`, `SDScsvHelperV1`, and `SDScsvHelperV2` own population and field mapping. They have no network or Azure side effects.
 - `FileHelper` constructs a complete in-memory CSV set in UTF-8 without BOM before publication starts.
 - `SdsGraphClient` owns connector resolution, Graph authentication, upload-session creation, unauthenticated SAS PUTs, validation start, and validation polling.

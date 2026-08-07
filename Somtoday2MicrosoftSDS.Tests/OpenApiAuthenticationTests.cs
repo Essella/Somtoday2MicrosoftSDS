@@ -20,12 +20,13 @@ public class OpenApiAuthenticationTests
             Content = new StringContent($"{{\"access_token\":\"{accessToken}\"}}", Encoding.UTF8, "application/json")
         });
         CapturingLogger logger = new();
+        RecordingHttpClientFactory clientFactory = new(handler);
         OpenAPIHelper helper = new(
             "client+id&value",
             "secret&value=1+2",
             Guid.Parse("11111111-1111-1111-1111-111111111111"),
             SomEnvironmentConfig.Prod,
-            new RecordingHttpClientFactory(handler),
+            clientFactory,
             logger);
 
         await helper.ConnectAsync(CancellationToken.None);
@@ -36,6 +37,9 @@ public class OpenApiAuthenticationTests
             handler.RequestBody);
         Assert.DoesNotContain(logger.Messages, message => message.Contains(accessToken, StringComparison.Ordinal));
         Assert.DoesNotContain(logger.Messages, message => message.Contains("secret&value", StringComparison.Ordinal));
+        Assert.Equal(
+            [Program.SomtodayAuthenticationHttpClientName, Program.SomtodayApiHttpClientName],
+            clientFactory.ClientNames);
     }
 
     [Fact]
@@ -66,7 +70,10 @@ public class OpenApiAuthenticationTests
     [Theory]
     [InlineData(HttpStatusCode.BadRequest)]
     [InlineData(HttpStatusCode.Unauthorized)]
-    public async Task PermanentClientErrorsAreNotRetried(HttpStatusCode statusCode)
+    [InlineData(HttpStatusCode.Found)]
+    [InlineData(HttpStatusCode.TemporaryRedirect)]
+    [InlineData(HttpStatusCode.PermanentRedirect)]
+    public async Task PermanentProtocolAndClientErrorsAreNotRetried(HttpStatusCode statusCode)
     {
         RecordingHandler handler = new(_ => new HttpResponseMessage(statusCode));
         int delayCount = 0;
@@ -337,15 +344,17 @@ public class OpenApiAuthenticationTests
               {"uuid":"{{secondSchoolUuid}}","naam":"Second","afkorting":"SECOND","brins":[]}
             ]}
             """));
+        RecordingHttpClientFactory clientFactory = new(handler);
 
         IReadOnlyList<Instelling> institutions = await OpenAPIHelper.GetPublicInstitutionsAsync(
-            new RecordingHttpClientFactory(handler),
+            clientFactory,
             CancellationToken.None);
 
         Assert.Equal("FIRST", OpenAPIHelper.SelectInstitution(institutions, SchoolUuid).Afkorting);
         Assert.Equal("SECOND", OpenAPIHelper.SelectInstitution(institutions, secondSchoolUuid).Afkorting);
         CapturedRequest request = Assert.Single(handler.Requests);
         Assert.Null(request.Authorization);
+        Assert.Equal([Program.SomtodayPublicHttpClientName], clientFactory.ClientNames);
     }
 
     [Fact]
@@ -438,7 +447,13 @@ public class OpenApiAuthenticationTests
             this.handler = handler;
         }
 
-        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+        internal List<string> ClientNames { get; } = [];
+
+        public HttpClient CreateClient(string name)
+        {
+            ClientNames.Add(name);
+            return new HttpClient(handler, disposeHandler: false);
+        }
     }
 
     private sealed class RecordingHandler : HttpMessageHandler

@@ -6,7 +6,7 @@
 |---|---|
 | `Somtoday__SchoolUUID__0` and higher | Required non-empty array of unique institution UUIDs |
 | `Somtoday__ClientId` | Required |
-| `Somtoday__ClientSecret` | Required; use the Job secret or Development User Secrets |
+| `Somtoday__ClientSecret` | Required opaque value; use the Job secret or Development User Secrets |
 | `Somtoday__Environment` | `PROD` by default; `TEST` and `ACCEPTATIE` supported; `NIGHTLY` Development-only |
 | `SchoolDataSync__InboundFlowId` | Required non-empty UUID of exactly one SDS inbound flow |
 | `Locations__IncludedLocationCodes__0` and higher | Optional; empty means all locations |
@@ -36,3 +36,5 @@ Teacher and pupil export is matching-only. Configure SDS not to create unmatched
 Production Graph access uses `DefaultAzureCredential`, constrained by infrastructure to `ManagedIdentityCredential`. Local development may use any supported `DefaultAzureCredential` developer credential with the required Graph application permissions: `IndustryData-InboundFlow.ReadWrite.All`, `IndustryData-DataConnector.Upload`, and `IndustryData.ReadBasic.All`. Never track the Somtoday secret, Azure tokens, SAS URLs, or production data.
 
 Somtoday authentication has four total attempts and retries only network/timeouts, HTTP 408/429, and HTTP 5xx. Other 4xx responses and invalid token payloads fail immediately.
+
+The client secret is rejected when it contains only whitespace. Every other value is passed to Somtoday exactly as configured; the application does not trim or otherwise normalize it. Somtoday authentication, public discovery, and authenticated data requests do not follow redirects. A 3xx response fails the affected operation without contacting its redirect target.

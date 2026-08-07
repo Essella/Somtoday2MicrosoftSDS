@@ -56,7 +56,7 @@ When one Somtoday person UUID occurs in multiple included locations:
 - V2.1 emits one user row per Somtoday UUID and retains the distinct organization roles.
 - V1 guardian rows and V2.1 guardian users are deduplicated by Somtoday UUID.
 
-This behavior assumes that a recurring person UUID represents the same Somtoday source object in every location; only the V1 school association varies per location.
+Somtoday guarantees that every recurring entity UUID in one run represents the same source object with consistent source data and context. The existing format-specific deduplication is therefore the intended behavior; no separate branch for hypothetical conflicting data from one UUID is required. For a recurring person UUID, only the V1 school association varies per location.
 
 Emit each exact relationship, role, roster, and enrollment combination once. Different Somtoday UUIDs that produce the same username or email remain separate source people and are passed through for Microsoft SDS to validate.
 

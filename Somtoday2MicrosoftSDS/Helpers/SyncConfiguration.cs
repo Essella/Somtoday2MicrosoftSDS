@@ -75,7 +75,7 @@ internal sealed record SyncConfiguration(
                 schoolUuids.ToArray(),
                 inboundFlowId,
                 clientId.Trim(),
-                clientSecret.Trim(),
+                clientSecret,
                 somEnvironment,
                 configuration.GetSection("Locations:IncludedLocationCodes").Get<string[]>() ?? [],
                 configuration.GetSection("Locations:ExcludedLocationCodes").Get<string[]>() ?? [],

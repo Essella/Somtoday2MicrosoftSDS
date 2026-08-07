@@ -14,6 +14,8 @@ Only the latest release receives security fixes. Report suspected vulnerabilitie
 - CSV data is built in memory and persists only in the temporary SDS-owned SAS container. This repository provisions no application Storage Account.
 - Guardian-name exclusion logs contain only a count. CSV CR/LF errors contain only SDS version, file name, and column name.
 - Preserve cancellation through token acquisition, Graph calls, retries, SAS uploads, and validation polling.
+- Somtoday authentication, public discovery, and authenticated data clients do not follow redirects. This keeps the authentication form and school-data requests on their configured endpoints.
+- Treat the Somtoday client secret as opaque. Reject a whitespace-only value, but do not trim or normalize any other value.
 - NIGHTLY uses plaintext HTTP and is Development-only; never use it with real personal data.
 - Treat Dynamic LINQ username expressions as trusted administrator code and do not use sensitive model fields.
 

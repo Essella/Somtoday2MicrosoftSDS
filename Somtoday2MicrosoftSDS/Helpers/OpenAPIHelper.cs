@@ -41,7 +41,8 @@ namespace Somtoday2MicrosoftSDS.Helpers
             IsConnected = false;
             try
             {
-                using HttpClient authenticationClient = httpClientFactory.CreateClient();
+                using HttpClient authenticationClient = httpClientFactory.CreateClient(
+                    Program.SomtodayAuthenticationHttpClientName);
                 using FormUrlEncodedContent content = new FormUrlEncodedContent(new Dictionary<string, string>
                 {
                     ["grant_type"] = "client_credentials",
@@ -65,7 +66,8 @@ namespace Somtoday2MicrosoftSDS.Helpers
                     }
 
                     string accessToken = accessTokenValue.Value<string>();
-                    HttpClient httpClient = httpClientFactory.CreateClient();
+                    HttpClient httpClient = httpClientFactory.CreateClient(
+                        Program.SomtodayApiHttpClientName);
                     httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
                     somOpenApiClient = new SomOpenApiClient(httpClient)
@@ -138,7 +140,8 @@ namespace Somtoday2MicrosoftSDS.Helpers
         {
             ArgumentNullException.ThrowIfNull(httpClientFactory);
 
-            using HttpClient httpClient = httpClientFactory.CreateClient();
+            using HttpClient httpClient = httpClientFactory.CreateClient(
+                Program.SomtodayPublicHttpClientName);
             SomOpenApiClient publicClient = new(httpClient)
             {
                 BaseUrl = SomEnvironmentConfig.Prod.Url

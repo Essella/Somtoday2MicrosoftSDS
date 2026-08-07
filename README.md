@@ -69,6 +69,8 @@ Microsoft Entra-replicatie kan de eerste roltoewijzing direct na het maken van d
 
 De belangrijkste instellingen zijn `Somtoday__SchoolUUID__0` en hoger, `Somtoday__ClientId`, `Somtoday__ClientSecret`, `SchoolDataSync__InboundFlowId`, locatie-inclusies/-exclusies, gebruikersnaamregels en optionele guardian-sync. Gebruikersnaamregels ondersteunen gecompileerde IDM-templates met vaste tekst en stringbewerkingen. Gebruik voor de Somtoday-omgeving bij voorkeur de volledige leesbare naam; technisch bepaalt de eerste letter de omgeving. Header-only-uitvoer gebeurt automatisch op 31 juli (Europe/Amsterdam). Zie de [configuratiehandleiding](docs/operations/CONFIGURATION.md).
 
+Het Somtoday-clientsecret wordt exact gebruikt zoals het is geconfigureerd; alleen een waarde die volledig uit witruimte bestaat wordt afgewezen. De applicatie volgt geen HTTP-redirects voor Somtoday-authenticatie, openbare instellingsdetectie of gegevensdownloads.
+
 Een klas is exporteerbaar als de naam niet leeg is en na UUID-resolutie minstens één docent en één leerling overblijft. Alleen personen uit opgenomen klassen worden geëxporteerd. Docenten en leerlingen zijn matching-only; configureer SDS niet om ontbrekende accounts aan te maken. Guardians volgen aparte regels voor contacttoestemming, e-mail, naam, relatie en telefoonnormalisatie. Zie het [exportcontract](docs/contracts/EXPORT.md).
 
 ## Documentatie

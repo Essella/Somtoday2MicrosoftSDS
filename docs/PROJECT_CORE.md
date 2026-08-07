@@ -46,6 +46,7 @@ Confirmed intended scope includes multiple Somtoday institutions per Job, locati
 - Dataset construction completes before the upload session is requested. Files upload sequentially; any failed upload prevents validation.
 - Every dataset requests a new upload session with `resetSession=true`, uploads only to its returned temporary SAS container, then starts and polls connector validation.
 - Network retries are bounded, cancellation is preserved, `Retry-After` is respected, permanent 4xx responses are not retried, and unknown validation statuses are never treated as success.
+- Somtoday authentication, public discovery, and authenticated data requests do not follow redirects. Every 3xx response is a permanent protocol failure for that operation.
 - Production Graph authentication uses `DefaultAzureCredential` constrained to the Container Apps Job's system-assigned managed identity.
 - Secrets, tokens, SAS URLs/querystrings, authentication bodies, personal data, production CSV data, and unsafe exception detail must not enter tracked files or logs.
 

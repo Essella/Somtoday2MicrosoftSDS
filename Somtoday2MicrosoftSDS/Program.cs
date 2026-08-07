@@ -11,6 +11,9 @@ internal class Program
 {
     internal const string SdsGraphHttpClientName = "SdsGraph";
     internal const string SdsUploadHttpClientName = "SdsUpload";
+    internal const string SomtodayAuthenticationHttpClientName = "SomtodayAuthentication";
+    internal const string SomtodayApiHttpClientName = "SomtodayApi";
+    internal const string SomtodayPublicHttpClientName = "SomtodayPublic";
     private const int TotalConnectionAttempts = 4;
     private static readonly TimeSpan ConnectionRetryDelay = TimeSpan.FromSeconds(2);
     private static ILogger<Program> _logger;
@@ -29,12 +32,20 @@ internal class Program
     internal static HostApplicationBuilder CreateHostApplicationBuilder()
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder();
-        builder.Services.AddHttpClient();
         builder.Services
             .AddHttpClient(SdsGraphHttpClientName)
             .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHandler);
         builder.Services
             .AddHttpClient(SdsUploadHttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHandler);
+        builder.Services
+            .AddHttpClient(SomtodayAuthenticationHttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHandler);
+        builder.Services
+            .AddHttpClient(SomtodayApiHttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHandler);
+        builder.Services
+            .AddHttpClient(SomtodayPublicHttpClientName)
             .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHandler);
         return builder;
     }
