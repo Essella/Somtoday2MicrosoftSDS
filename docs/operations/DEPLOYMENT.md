@@ -6,8 +6,10 @@ Each deployment creates exactly one scheduled Azure Container Apps Job for one S
 
 `environmentMode` controls the environment:
 
-- `new` (default) creates Log Analytics and a new Container Apps Environment.
-- `existing` places the Job in the environment identified by `existingContainerAppsEnvironmentResourceId`. Supply the full `Microsoft.App/managedEnvironments` resource ID. It may be in another resource group, but must be in the same subscription.
+- `existing` (default) places the Job in the environment identified by `existingContainerAppsEnvironmentResourceId`. Supply the full `Microsoft.App/managedEnvironments` resource ID. It may be in another resource group, but must be in the same subscription.
+- `new` creates Log Analytics and a new Container Apps Environment only after the operator explicitly selects that mode.
+
+The default promotes environment reuse and avoids creating infrastructure, and its related cost, without an explicit choice. A deployment with the default mode cannot continue until it has a valid existing environment resource ID.
 
 The template creates no Storage Account, Power Automate flow, app registration, user-assigned identity, or permanent CSV output. The Job uses only a system-assigned managed identity. The secure `somtodayClientSecret` parameter becomes a Container Apps Job secret.
 
@@ -27,13 +29,31 @@ The runtime uses Microsoft Graph `/beta` industry-data endpoints. Beta APIs can 
 
 ## Portal deployment
 
-The README button submits the checked-in `infra/azuredeploy.json` directly to Azure Portal. Bicep remains the source. For the first Job keep `environmentMode=new`; for additional Jobs select `existing` and paste the first deployment's environment resource-ID. Supply `inboundFlowId`, `schoolUuids`, Somtoday client ID and secret, and pin production to a release tag or image digest.
+The README button submits the checked-in `infra/azuredeploy.json` directly to Azure Portal. Bicep remains the source. The generic ARM form cannot show a resource picker. Select `existing` and paste the full environment resource ID, or explicitly select `new` when no reusable environment exists. Supply `inboundFlowId`, `schoolUuids`, Somtoday client ID and secret, and pin production to a release tag or image digest.
 
-Schedules are UTC. Defaults are 03:00 and 15:00 UTC, 0.5 vCPU, 1 GiB, a 3,600-second timeout, one replica, and one retry.
+Schedules are UTC. Defaults are 02:05 and 14:05 UTC, 0.5 vCPU, 1 GiB, a 3,600-second timeout, one replica, and one retry.
+
+## Portal form with an environment picker
+
+`infra/uiFormDefinition.json` is a Form View for an Azure Template Spec. It defaults to reusing an environment and uses `Microsoft.Solutions.ResourceSelector` to list `Microsoft.App/managedEnvironments` resources in the selected subscription. Selecting `new` hides the picker and shows the new-environment fields instead.
+
+Publish a versioned Template Spec in the operator's Azure organization:
+
+```powershell
+az ts create `
+  --name somtoday2microsoftsds `
+  --version 1.0.0 `
+  --resource-group rg-template-specs `
+  --location westeurope `
+  --template-file infra/azuredeploy.json `
+  --ui-form-definition infra/uiFormDefinition.json
+```
+
+Deploy the published version from its Template Spec page in Azure Portal. The portal starts the Form View automatically. Grant intended operators read access to the Template Spec and the normal deployment permissions on their target scope. A Template Spec is organization-scoped and therefore does not replace the public, cross-tenant README button.
 
 ## Azure CLI
 
-First Job:
+First Job when no reusable environment exists:
 
 ```powershell
 Copy-Item infra/main.example.bicepparam infra/main.bicepparam

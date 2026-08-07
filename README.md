@@ -58,10 +58,12 @@ De Job-identiteit krijgt `IndustryData-InboundFlow.ReadWrite.All` en `IndustryDa
 
 `environmentMode` heeft twee keuzes:
 
-- `new` (standaard): maakt Log Analytics en een nieuwe ACA-omgeving;
-- `existing`: plaatst de Job in een bestaande ACA-omgeving via de volledige resource-ID. Die omgeving mag in een andere resourcegroep staan, maar moet in dezelfde subscription staan.
+- `existing` (standaard): plaatst de Job in een bestaande ACA-omgeving via de volledige resource-ID. Die omgeving mag in een andere resourcegroep staan, maar moet in dezelfde subscription staan;
+- `new`: maakt alleen na een expliciete keuze Log Analytics en een nieuwe ACA-omgeving.
 
-Gebruik voor de eerste Job doorgaans [main.example.bicepparam](infra/main.example.bicepparam) en voor een volgende Job [additional-job.example.bicepparam](infra/additional-job.example.bicepparam). Pin productie op een releasetag of image-digest in plaats van `latest`. ACA-cronschema's zijn UTC.
+De standaard stuurt op hergebruik van een bestaande omgeving om onbedoelde extra infrastructuurkosten te voorkomen. De publieke Deploy to Azure-knop gebruikt het generieke ARM-formulier; plak daar de volledige resource-ID. [uiFormDefinition.json](infra/uiFormDefinition.json) biedt via een Azure Template Spec een native resourcekiezer en toont alleen de velden voor de gekozen modus. Zie de [deploymenthandleiding](docs/operations/DEPLOYMENT.md) voor publicatie van die Template Spec.
+
+Gebruik voor de eerste Job zonder bestaande omgeving [main.example.bicepparam](infra/main.example.bicepparam) en voor een volgende Job [additional-job.example.bicepparam](infra/additional-job.example.bicepparam). Pin productie op een releasetag of image-digest in plaats van `latest`. ACA-cronschema's zijn UTC.
 
 Microsoft Entra-replicatie kan de eerste roltoewijzing direct na het maken van de system-assigned identity tijdelijk laten mislukken. Voer in dat geval dezelfde deployment nogmaals uit.
 

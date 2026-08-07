@@ -1,0 +1,339 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2021-09-09/uiFormDefinition.schema.json#",
+  "view": {
+    "kind": "Form",
+    "properties": {
+      "title": "Somtoday naar Microsoft SDS - Container Apps Job",
+      "steps": [
+        {
+          "name": "basics",
+          "label": "Basis",
+          "description": "Kies de subscription, resource group en regio voor de deployment.",
+          "elements": [
+            {
+              "name": "resourceScope",
+              "type": "Microsoft.Common.ResourceScope",
+              "subscription": {
+                "resourceProviders": [
+                  "Microsoft.App",
+                  "Microsoft.OperationalInsights"
+                ]
+              },
+              "resourceGroup": {
+                "allowExisting": true
+              },
+              "location": {
+                "label": "Regio",
+                "toolTip": "Deze regio wordt gebruikt als je een nieuwe Container Apps Environment maakt.",
+                "resourceTypes": [
+                  "Microsoft.App/managedEnvironments",
+                  "Microsoft.App/jobs"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "environment",
+          "label": "Environment",
+          "description": "Gebruik een bestaande Container Apps Environment of maak een nieuwe.",
+          "elements": [
+            {
+              "name": "environmentMode",
+              "type": "Microsoft.Common.OptionsGroup",
+              "label": "Container Apps Environment",
+              "defaultValue": {
+                "value": "existing"
+              },
+              "toolTip": "Meerdere Jobs kunnen dezelfde Container Apps Environment gebruiken.",
+              "constraints": {
+                "allowedValues": [
+                  {
+                    "label": "Nieuwe environment maken",
+                    "value": "new"
+                  },
+                  {
+                    "label": "Bestaande environment gebruiken",
+                    "value": "existing"
+                  }
+                ],
+                "required": true
+              },
+              "visible": true
+            },
+            {
+              "name": "existingEnvironment",
+              "type": "Microsoft.Solutions.ResourceSelector",
+              "label": "Bestaande Container Apps Environment",
+              "resourceType": "Microsoft.App/managedEnvironments",
+              "toolTip": "Selecteer de Container Apps Environment waarin de nieuwe Job moet worden geplaatst.",
+              "constraints": {
+                "required": "[equals(steps('environment').environmentMode, 'existing')]"
+              },
+              "scope": {
+                "subscriptionId": "[steps('basics').resourceScope.subscription.subscriptionId]"
+              },
+              "visible": "[equals(steps('environment').environmentMode, 'existing')]"
+            },
+            {
+              "name": "newEnvironmentName",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Naam nieuwe Container Apps Environment",
+              "defaultValue": "somtodaysds-env",
+              "toolTip": "De environment wordt in de gekozen resource group en regio aangemaakt.",
+              "constraints": {
+                "required": "[equals(steps('environment').environmentMode, 'new')]",
+                "regex": "^[A-Za-z0-9._()-]{2,64}$",
+                "validationMessage": "Gebruik 2-64 letters, cijfers en de tekens . _ ( ) -."
+              },
+              "visible": "[equals(steps('environment').environmentMode, 'new')]"
+            },
+            {
+              "name": "namePrefix",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Resource-prefix",
+              "defaultValue": "somtodaysds",
+              "toolTip": "Wordt gebruikt voor de Log Analytics Workspace als je een nieuwe environment maakt.",
+              "constraints": {
+                "required": "[equals(steps('environment').environmentMode, 'new')]",
+                "regex": "^[A-Za-z0-9-]{3,20}$",
+                "validationMessage": "Gebruik 3-20 letters, cijfers of koppeltekens."
+              },
+              "visible": "[equals(steps('environment').environmentMode, 'new')]"
+            }
+          ]
+        },
+        {
+          "name": "job",
+          "label": "Job",
+          "description": "Instellingen voor de nieuwe Container Apps Job.",
+          "elements": [
+            {
+              "name": "jobName",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Jobnaam",
+              "defaultValue": "somtodaysds-job",
+              "toolTip": "Gebruik voor iedere extra Job een unieke naam.",
+              "constraints": {
+                "required": true,
+                "regex": "^(?=.{1,31}$)(?!.*--)[a-z](?:[a-z0-9-]*[a-z0-9])?$",
+                "validationMessage": "Gebruik minder dan 32 kleine letters, cijfers of koppeltekens; begin met een letter, eindig met een letter of cijfer en gebruik geen dubbel koppelteken."
+              },
+              "visible": true
+            },
+            {
+              "name": "imageReference",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Containerimage",
+              "defaultValue": "ghcr.io/essella/somtoday2microsoftsds:latest",
+              "toolTip": "Volledige containerimage-reference inclusief tag of digest.",
+              "constraints": {
+                "required": true
+              },
+              "visible": true
+            },
+            {
+              "name": "cronExpression",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Cron-schema (UTC)",
+              "defaultValue": "5 2,14 * * *",
+              "toolTip": "Cron-expression voor de scheduled Container Apps Job. De tijdzone is UTC.",
+              "constraints": {
+                "required": true
+              },
+              "visible": true
+            },
+            {
+              "name": "replicaTimeoutSeconds",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Timeout in seconden",
+              "defaultValue": "3600",
+              "toolTip": "Maximale uitvoeringstijd van één replica.",
+              "constraints": {
+                "required": true,
+                "regex": "^([1-9]|[1-9][0-9]{1,2}|[1-2][0-9]{3}|3[0-5][0-9]{2}|3600)$",
+                "validationMessage": "Vul een getal van 1 t/m 3600 in."
+              },
+              "visible": true
+            },
+            {
+              "name": "replicaRetryLimit",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Aantal retries",
+              "defaultValue": "1",
+              "toolTip": "Aantal retries na een mislukte uitvoering.",
+              "constraints": {
+                "required": true,
+                "regex": "^[0-9]+$",
+                "validationMessage": "Vul een geheel getal van 0 of hoger in."
+              },
+              "visible": true
+            }
+          ]
+        },
+        {
+          "name": "somtoday",
+          "label": "Somtoday en SDS",
+          "description": "Koppelgegevens voor Somtoday en Microsoft School Data Sync.",
+          "elements": [
+            {
+              "name": "schoolUuids",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Somtoday-instellings-UUID's",
+              "defaultValue": "",
+              "toolTip": "Eén of meerdere UUID's, door komma's gescheiden.",
+              "constraints": {
+                "required": true,
+                "regex": "^\\s*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\s*(,\\s*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\s*)*$",
+                "validationMessage": "Vul één of meer geldige UUID's in, gescheiden door komma's."
+              },
+              "visible": true
+            },
+            {
+              "name": "inboundFlowId",
+              "type": "Microsoft.Common.TextBox",
+              "label": "SDS inbound-flow-ID",
+              "defaultValue": "",
+              "toolTip": "UUID van de Microsoft School Data Sync inbound flow; dit is niet de connector-ID.",
+              "constraints": {
+                "required": true,
+                "regex": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                "validationMessage": "Vul een geldige UUID in."
+              },
+              "visible": true
+            },
+            {
+              "name": "somtodayClientId",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Somtoday-client-ID",
+              "defaultValue": "",
+              "toolTip": "OAuth-client-ID van Somtoday Connect.",
+              "constraints": {
+                "required": true
+              },
+              "visible": true
+            },
+            {
+              "name": "somtodayClientSecret",
+              "type": "Microsoft.Common.PasswordBox",
+              "label": {
+                "password": "Somtoday-clientsecret",
+                "confirmPassword": "Bevestig Somtoday-clientsecret"
+              },
+              "toolTip": "OAuth-clientsecret van Somtoday Connect. De deployment slaat dit als Container Apps Job-secret op.",
+              "constraints": {
+                "required": true
+              },
+              "options": {
+                "hideConfirmation": false
+              },
+              "visible": true
+            },
+            {
+              "name": "somtodayEnvironment",
+              "type": "Microsoft.Common.OptionsGroup",
+              "label": "Somtoday-omgeving",
+              "defaultValue": {
+                "value": "PROD"
+              },
+              "constraints": {
+                "allowedValues": [
+                  {
+                    "label": "PROD",
+                    "value": "PROD"
+                  },
+                  {
+                    "label": "TEST",
+                    "value": "TEST"
+                  },
+                  {
+                    "label": "ACCEPTATIE",
+                    "value": "ACCEPTATIE"
+                  }
+                ],
+                "required": true
+              },
+              "visible": true
+            },
+            {
+              "name": "enableGuardianSync",
+              "type": "Microsoft.Common.CheckBox",
+              "label": "Guardian-sync inschakelen",
+              "toolTip": "Synchroniseer ook guardians en hun relaties.",
+              "visible": true
+            },
+            {
+              "name": "includedLocationCodes",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Opgenomen locatiecodes (optioneel)",
+              "defaultValue": "",
+              "toolTip": "Door komma's gescheiden. Leeg betekent dat er geen inclusiefilter is.",
+              "constraints": {
+                "required": false
+              },
+              "visible": true
+            },
+            {
+              "name": "excludedLocationCodes",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Uitgesloten locatiecodes (optioneel)",
+              "defaultValue": "",
+              "toolTip": "Door komma's gescheiden. Leeg betekent dat er geen exclusiefilter is.",
+              "constraints": {
+                "required": false
+              },
+              "visible": true
+            },
+            {
+              "name": "teacherUsernameFormat",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Gebruikersnaamregel docent",
+              "defaultValue": "Emailadres",
+              "constraints": {
+                "required": true
+              },
+              "visible": true
+            },
+            {
+              "name": "studentUsernameFormat",
+              "type": "Microsoft.Common.TextBox",
+              "label": "Gebruikersnaamregel leerling",
+              "defaultValue": "Emailadres",
+              "constraints": {
+                "required": true
+              },
+              "visible": true
+            }
+          ]
+        }
+      ]
+    },
+    "outputs": {
+      "kind": "ResourceGroup",
+      "resourceGroupId": "[steps('basics').resourceScope.resourceGroup.id]",
+      "location": "[steps('basics').resourceScope.location.name]",
+      "parameters": {
+        "location": "[steps('basics').resourceScope.location.name]",
+        "environmentMode": "[steps('environment').environmentMode]",
+        "namePrefix": "[if(equals(steps('environment').environmentMode, 'new'), steps('environment').namePrefix, 'somtodaysds')]",
+        "containerAppsEnvironmentName": "[if(equals(steps('environment').environmentMode, 'new'), steps('environment').newEnvironmentName, 'somtodaysds-env')]",
+        "existingContainerAppsEnvironmentResourceId": "[if(equals(steps('environment').environmentMode, 'existing'), steps('environment').existingEnvironment.id, '')]",
+        "jobName": "[steps('job').jobName]",
+        "imageReference": "[steps('job').imageReference]",
+        "cronExpression": "[steps('job').cronExpression]",
+        "replicaTimeoutSeconds": "[int(steps('job').replicaTimeoutSeconds)]",
+        "replicaRetryLimit": "[int(steps('job').replicaRetryLimit)]",
+        "schoolUuids": "[split(steps('somtoday').schoolUuids, ',')]",
+        "inboundFlowId": "[steps('somtoday').inboundFlowId]",
+        "somtodayClientId": "[steps('somtoday').somtodayClientId]",
+        "somtodayEnvironment": "[steps('somtoday').somtodayEnvironment]",
+        "somtodayClientSecret": "[steps('somtoday').somtodayClientSecret]",
+        "includedLocationCodes": "[if(empty(steps('somtoday').includedLocationCodes), parse('[]'), split(steps('somtoday').includedLocationCodes, ','))]",
+        "excludedLocationCodes": "[if(empty(steps('somtoday').excludedLocationCodes), parse('[]'), split(steps('somtoday').excludedLocationCodes, ','))]",
+        "enableGuardianSync": "[steps('somtoday').enableGuardianSync]",
+        "teacherUsernameFormat": "[steps('somtoday').teacherUsernameFormat]",
+        "studentUsernameFormat": "[steps('somtoday').studentUsernameFormat]"
+      }
+    }
+  }
+}

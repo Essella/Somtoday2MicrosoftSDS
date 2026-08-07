@@ -2,12 +2,15 @@ extension microsoftGraphV1
 
 targetScope = 'resourceGroup'
 
+@description('Azure-regio voor nieuwe resources. Bij een bestaande Container Apps Environment wordt de regio van die environment gebruikt voor de Job.')
+param location string = resourceGroup().location
+
 @description('ACA-omgevingsmodus. new maakt een nieuwe omgeving met Log Analytics; existing gebruikt de opgegeven bestaande omgeving.')
 @allowed([
   'new'
   'existing'
 ])
-param environmentMode string = 'new'
+param environmentMode string = 'existing'
 
 @description('Korte prefix voor nieuwe resourcenamen; standaard: somtodaysds.')
 @minLength(3)
@@ -15,19 +18,19 @@ param environmentMode string = 'new'
 param namePrefix string = 'somtodaysds'
 
 @description('Naam van de nieuwe Container Apps Environment. Alleen gebruikt bij environmentMode new.')
-param containerAppsEnvironmentName string = '${namePrefix}-env'
+param containerAppsEnvironmentName string = 'somtodaysds-env'
 
 @description('Volledige resource-ID van een bestaande Container Apps Environment in dezelfde subscription. Verplicht bij environmentMode existing.')
 param existingContainerAppsEnvironmentResourceId string = ''
 
-@description('Naam van deze Container Apps Job.')
-param jobName string = '${namePrefix}-job'
+@description('Naam van deze Container Apps Job. Gebruik een andere naam voor iedere extra Job in dezelfde environment.')
+param jobName string = 'somtodaysds-job'
 
 @description('Containerimage uit GHCR, inclusief release-tag of digest.')
 param imageReference string = 'ghcr.io/essella/somtoday2microsoftsds:latest'
 
 @description('Cron-schema in UTC voor de Job.')
-param cronExpression string = '0 3,15 * * *'
+param cronExpression string = '5 2,14 * * *'
 
 @minValue(1)
 @maxValue(3600)
@@ -38,9 +41,7 @@ param replicaRetryLimit int = 1
 
 @description('Somtoday-instellings-UUIDs die samen één volledige dataset vormen.')
 @minLength(1)
-param schoolUuids array = [
-  '11111111-1111-1111-1111-111111111111'
-]
+param schoolUuids array
 
 @description('Inbound-flow-ID van Microsoft School Data Sync. Dit is niet de connector-ID.')
 param inboundFlowId string
@@ -88,7 +89,7 @@ var validatedInboundFlowId = length(inboundFlowId) == 36
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (isNewEnvironment) {
   name: logAnalyticsName
-  location: resourceGroup().location
+  location: location
   tags: resourceGroup().tags
   properties: {
     retentionInDays: 30
@@ -100,7 +101,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if
 
 resource newEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = if (isNewEnvironment) {
   name: containerAppsEnvironmentName
-  location: resourceGroup().location
+  location: location
   tags: resourceGroup().tags
   properties: {
     appLogsConfiguration: {
@@ -119,7 +120,7 @@ resource existingEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' exis
 }
 
 var effectiveEnvironmentId = isNewEnvironment ? newEnvironment!.id : existingEnvironment!.id
-var effectiveLocation = isNewEnvironment ? resourceGroup().location : existingEnvironment!.location
+var effectiveLocation = isNewEnvironment ? location : existingEnvironment!.location
 
 var baseEnvironmentVariables = [
   {
@@ -158,17 +159,20 @@ var baseEnvironmentVariables = [
 
 var schoolEnvironmentVariables = [for (schoolUuid, index) in schoolUuids: {
   name: 'Somtoday__SchoolUUID__${index}'
-  value: string(schoolUuid)
+  value: trim(string(schoolUuid))
 }]
 
-var includedLocationEnvironmentVariables = [for (locationCode, index) in includedLocationCodes: {
+var normalizedIncludedLocationCodes = filter(includedLocationCodes, locationCode => !empty(trim(string(locationCode))))
+var normalizedExcludedLocationCodes = filter(excludedLocationCodes, locationCode => !empty(trim(string(locationCode))))
+
+var includedLocationEnvironmentVariables = [for (locationCode, index) in normalizedIncludedLocationCodes: {
   name: 'Locations__IncludedLocationCodes__${index}'
-  value: string(locationCode)
+  value: trim(string(locationCode))
 }]
 
-var excludedLocationEnvironmentVariables = [for (locationCode, index) in excludedLocationCodes: {
+var excludedLocationEnvironmentVariables = [for (locationCode, index) in normalizedExcludedLocationCodes: {
   name: 'Locations__ExcludedLocationCodes__${index}'
-  value: string(locationCode)
+  value: trim(string(locationCode))
 }]
 
 module scheduledJob './job.bicep' = {
