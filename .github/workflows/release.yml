@@ -70,9 +70,24 @@ jobs:
           -p:InformationalVersion=${{ needs.version.outputs.version }}
           -p:ContinuousIntegrationBuild=true
 
+  infrastructure:
+    name: Validate infrastructure
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+
+      - name: Validate Bicep, ARM, and portal form
+        shell: pwsh
+        run: ./scripts/validate-infrastructure.ps1
+
   csv-bootstrap-generate:
     name: Generate CSV bootstrap zips
-    needs: [version, test]
+    needs: [version, test, infrastructure]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -107,7 +122,7 @@ jobs:
 
   csv-bootstrap-assets:
     name: Publish CSV bootstrap assets
-    needs: [version, test, csv-bootstrap-generate]
+    needs: [version, test, infrastructure, csv-bootstrap-generate]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -139,7 +154,7 @@ jobs:
 
   container-image:
     name: Publish container image
-    needs: [version, test]
+    needs: [version, test, infrastructure]
     runs-on: ubuntu-latest
     permissions:
       contents: read

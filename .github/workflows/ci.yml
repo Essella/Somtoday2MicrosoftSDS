@@ -32,7 +32,7 @@ jobs:
         run: dotnet test Somtoday2MicrosoftSDS.sln --configuration Release --no-restore
 
   container-and-infra:
-    name: Container and Bicep
+    name: Container and infrastructure
     needs: test
     runs-on: ubuntu-latest
 
@@ -104,43 +104,6 @@ jobs:
           docker stop --time 10 "$container_name"
           test "$(docker inspect "$container_name" --format '{{.State.ExitCode}}')" = "1"
 
-      - name: Validate Bicep
-        run: |
-          az bicep build --file infra/main.bicep --outfile "${{ runner.temp }}/main.json"
-          SOMTODAY_CLIENT_SECRET=validation-only-value az bicep build-params --file infra/main.example.bicepparam --outfile "${{ runner.temp }}/main.parameters.json"
-          SOMTODAY_CLIENT_SECRET=validation-only-value az bicep build-params --file infra/additional-job.example.bicepparam --outfile "${{ runner.temp }}/additional-job.parameters.json"
-
-          validation=$(jq '
-            {
-              jobModule: any(.resources[]; .type == "Microsoft.Resources/deployments"),
-              secretIsSecure: (
-                (.parameters.somtodayClientSecret.type | ascii_downcase)
-                == "securestring"
-              ),
-              noCpuOrMemoryParameters: (
-                (.parameters | has("cpu") | not)
-                and (.parameters | has("memory") | not)
-              ),
-              environmentModes: (.parameters.environmentMode.allowedValues == ["new", "existing"]),
-              existingEnvironmentId: (.parameters | has("existingContainerAppsEnvironmentResourceId")),
-              noStorage: all(.resources[]; (.type | startswith("Microsoft.Storage/") | not)),
-              noUserAssignedIdentity: all(.resources[]; (.identity.type? // "") != "UserAssigned")
-            }
-            | . as $checks
-            | $checks + { all: ($checks | all(.[]; .)) }
-          ' "${{ runner.temp }}/main.json")
-
-          jq -r '
-            ["| Controle | Resultaat |", "|---|---|"]
-            + (to_entries | map("| \(.key) | \(.value) |"))
-            | .[]
-          ' <<< "$validation"
-          test "$(jq -r '.all' <<< "$validation")" = "true"
-          grep -q 'IndustryData-InboundFlow.ReadWrite.All' infra/main.bicep
-          grep -q 'IndustryData-DataConnector.Upload' infra/main.bicep
-          grep -q 'IndustryData.ReadBasic.All' infra/main.bicep
-          test "$(grep -c "resource job 'Microsoft.App/jobs" infra/job.bicep)" = "1"
-
-          jq --sort-keys 'del(.metadata._generator)' "${{ runner.temp }}/main.json" > "${{ runner.temp }}/main.canonical.json"
-          jq --sort-keys 'del(.metadata._generator)' infra/azuredeploy.json > "${{ runner.temp }}/azuredeploy.canonical.json"
-          diff --unified "${{ runner.temp }}/main.canonical.json" "${{ runner.temp }}/azuredeploy.canonical.json"
+      - name: Validate infrastructure
+        shell: pwsh
+        run: ./scripts/validate-infrastructure.ps1

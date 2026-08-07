@@ -20,8 +20,10 @@ dotnet run --project Somtoday2MicrosoftSDS/Somtoday2MicrosoftSDS.csproj
 dotnet restore Somtoday2MicrosoftSDS.sln
 dotnet test Somtoday2MicrosoftSDS.sln --configuration Release
 dotnet publish Somtoday2MicrosoftSDS/Somtoday2MicrosoftSDS.csproj --configuration Release --runtime linux-x64 --self-contained false
-az bicep build --file infra/main.bicep
+./scripts/validate-infrastructure.ps1
 ```
+
+The infrastructure validation requires Azure CLI with Bicep support and network access to the versioned Azure Form View schema. It compiles the main template and both example parameter files, compares the result with `infra/azuredeploy.json`, validates `infra/uiFormDefinition.json`, and checks that the form outputs exactly match the ARM parameters.
 
 Transport tests use in-memory HTTP handlers and synthetic CSV content. They verify Graph endpoint composition, connector format selection, exact SAS query retention, required PUT headers, bearer-token separation, retries, validation polling, and failure boundaries without contacting Azure or SDS.
 
