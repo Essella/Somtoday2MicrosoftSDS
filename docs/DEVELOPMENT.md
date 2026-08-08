@@ -12,7 +12,7 @@ $env:DOTNET_ENVIRONMENT = 'Development'
 dotnet run --project Somtoday2MicrosoftSDS/Somtoday2MicrosoftSDS.csproj
 ```
 
-`DefaultAzureCredential` must obtain a Microsoft Graph token for local runs. The development identity needs `IndustryData-InboundFlow.ReadWrite.All`, `IndustryData-DataConnector.Upload`, and `IndustryData.ReadBasic.All` application access to the target tenant. No Azurite or local storage emulator is used.
+`DefaultAzureCredential` must obtain a Microsoft Graph token for local runs. The development identity needs `IndustryData-DataConnector.Read.All`, `IndustryData-DataConnector.Upload`, and `IndustryData.ReadBasic.All` application access to the target tenant. No Azurite or local storage emulator is used.
 
 ## Build and test
 

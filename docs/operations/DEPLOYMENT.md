@@ -14,7 +14,7 @@ The Job image is fixed to `ghcr.io/essella/somtoday2microsoftsds:latest`. The sc
 
 Assign these Microsoft Graph application roles to every Job identity:
 
-- `IndustryData-InboundFlow.ReadWrite.All`
+- `IndustryData-DataConnector.Read.All`
 - `IndustryData-DataConnector.Upload`
 - `IndustryData.ReadBasic.All` (read the validation operation returned in `Location`)
 

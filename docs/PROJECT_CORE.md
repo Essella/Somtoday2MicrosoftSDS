@@ -17,28 +17,28 @@ Use these labels when provenance matters: **Confirmed intent**, **Code-observed 
 
 Somtoday2MicrosoftSDS is a one-shot .NET 10 batch application. One run authenticates to one or more configured Somtoday institutions, downloads the current school-year data for selected locations, converts the successful sources into one complete Microsoft School Data Sync (SDS) V1 or V2.1 CSV dataset, uploads that dataset directly to the temporary SAS container returned by Microsoft Graph, starts SDS validation, waits for its terminal result, and exits.
 
-The only supported production deployment is a scheduled Azure Container Apps Job. Each Job has one SDS inbound-flow ID, one or more Somtoday institution UUIDs, its own Somtoday credentials and configuration, and its own system-assigned managed identity. Multiple Jobs can share one Container Apps Environment. Local execution is supported for development and testing.
+The only supported production deployment is a scheduled Azure Container Apps Job. Each Job has one SDS source name, one or more Somtoday institution UUIDs, its own Somtoday credentials and configuration, and its own system-assigned managed identity. Multiple Jobs can share one Container Apps Environment. Local execution is supported for development and testing.
 
 Confirmed intended scope includes multiple Somtoday institutions per Job, location selection, configurable teacher and pupil username rules, optional guardian relationships, header-only output, direct Microsoft SDS upload, and validation polling.
 
 ## Terminology
 
 - A **Somtoday institution** is one configured Somtoday instance identified by an institution UUID.
-- An **inbound flow** is the configured Microsoft SDS ingestion activity identified by `InboundFlowId`.
-- A **connector** is the Graph `azureDataLakeConnector` related to that inbound flow. Its `ConnectorId` and `InboundFlowId` are separate identifiers.
+- An **SDS source name** is the immutable administrator-defined name of one configured Microsoft SDS CSV source. It is identified by `SourceName`.
+- A **connector** is the Graph `azureDataLakeConnector` with the configured SDS source name. Its `ConnectorId` is resolved at run time and is not configured.
 - A **dataset** is the complete file set for exactly one SDS version. The connector's `fileFormat.code` selects V1 or V2.1.
 - An **upload session** is the short-lived Graph response containing the SDS-owned SAS container used only by the current dataset upload.
 
 ## Non-goals and boundaries
 
 - No Windows production deployment, HTTP service, interactive application, durable queue, or continuously running scheduler is supported.
-- The project does not provision Somtoday access or create/configure the SDS inbound flow or connector.
+- The project does not provision Somtoday access or create/configure the SDS source or connector.
 - The project creates no application registration, client secret, user-assigned identity, permanent output Storage Account, Power Automate flow, staging store, promotion path, rollback store, Blob versioning, or lifecycle policy.
 - The project does not replace operator privacy governance, access reviews, retention policy, or AVG/GDPR assessment.
 
 ## Key invariants
 
-- Each run resolves the connector through `/external/industryData/inboundFlows/{InboundFlowId}/dataConnector`; `ConnectorId` is never configurable.
+- Each run resolves exactly one `azureDataLakeConnector` with the configured source name through `/external/industryData/dataConnectors`; `ConnectorId` is never configurable.
 - `schoolDataSyncV1` selects one complete V1 dataset and `schoolDataSyncV2Rev1` selects one complete V2.1 dataset. No run uploads both formats.
 - Successful Somtoday institutions are combined into the dataset. A failed institution is omitted, the successful subset remains uploadable, and the final process exit code is nonzero.
 - V1 and V2.1 use the same population rules. A class requires at least one resolved exportable teacher and pupil; people without an included class are excluded.

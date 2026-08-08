@@ -12,10 +12,10 @@ param location string
 @minLength(36)
 param schoolUuidsCsv string
 
-@description('Inbound-flow-ID van Microsoft School Data Sync. Dit is niet de connector-ID.')
-@minLength(36)
-@maxLength(36)
-param inboundFlowId string
+@description('Vaste, unieke naam van de Microsoft School Data Sync-bron.')
+@minLength(1)
+@maxLength(100)
+param sourceName string
 
 @description('OAuth-client-ID van Somtoday Connect.')
 @minLength(1)
@@ -82,7 +82,7 @@ var normalizedIncludedLocationCodes = [for value in split(includedLocationCodesC
 var normalizedExcludedLocationCodes = [for value in split(excludedLocationCodesCsv, ','): trim(value)]
 var includedLocationCodes = filter(normalizedIncludedLocationCodes, locationCode => !empty(locationCode))
 var excludedLocationCodes = filter(normalizedExcludedLocationCodes, locationCode => !empty(locationCode))
-var validatedInboundFlowId = length(inboundFlowId) == 36 ? inboundFlowId : fail('inboundFlowId must be a UUID.')
+var validatedSourceName = !empty(trim(sourceName)) ? trim(sourceName) : fail('sourceName must not be empty.')
 var invalidSchoolUuids = filter(schoolUuids, uuid => length(uuid) != 36)
 var validatedSchoolUuids = length(schoolUuids) > 0 && length(invalidSchoolUuids) == 0
   ? schoolUuids
@@ -91,7 +91,7 @@ var validatedSchoolUuids = length(schoolUuids) > 0 && length(invalidSchoolUuids)
 var jobTags = {
   'Somtoday2MicrosoftSDS.instance': normalizedJobPrefix
   'Somtoday2MicrosoftSDS.somtodayEnvironment': somtodayEnvironment
-  'Somtoday2MicrosoftSDS.inboundFlowId': validatedInboundFlowId
+  'Somtoday2MicrosoftSDS.sourceName': validatedSourceName
   'Somtoday2MicrosoftSDS.schoolUuidCount': string(length(validatedSchoolUuids))
   'Somtoday2MicrosoftSDS.cron': cronExpression
 }
@@ -114,8 +114,8 @@ var baseEnvironmentVariables = [
     value: somtodayEnvironment
   }
   {
-    name: 'SchoolDataSync__InboundFlowId'
-    value: validatedInboundFlowId
+    name: 'SchoolDataSync__SourceName'
+    value: validatedSourceName
   }
   {
     name: 'SchoolDataSync__EnableGuardianSync'

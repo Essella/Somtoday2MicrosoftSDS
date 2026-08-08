@@ -110,7 +110,7 @@ internal class Program
                 httpClientFactory.CreateClient(SdsUploadHttpClientName),
                 new DefaultAzureCredential());
             SdsConnector connector = await sdsClient.GetConnectorAsync(
-                configuration.InboundFlowId,
+                configuration.SourceName,
                 cancellationToken);
             _logger.LogInformation(
                 "Resolved the SDS connector; this run will create one {SdsFormat} dataset",

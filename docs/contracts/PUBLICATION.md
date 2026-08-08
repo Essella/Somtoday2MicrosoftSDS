@@ -4,24 +4,24 @@ This document defines confirmed intended behavior for resolving the SDS connecto
 
 ## Connector resolution and dataset format
 
-`SchoolDataSync:InboundFlowId` is a required non-empty UUID. Retrieve its connector through Microsoft Graph beta:
+`SchoolDataSync:SourceName` is a required non-empty SDS source name. Retrieve the Graph data-connector collection through Microsoft Graph beta:
 
 ```text
-GET https://graph.microsoft.com/beta/external/industryData/inboundFlows/{InboundFlowId}/dataConnector
+GET https://graph.microsoft.com/beta/external/industryData/dataConnectors
 ```
 
-The response must have a non-empty UUID `id`, `@odata.type` equal to `#microsoft.graph.industryData.azureDataLakeConnector`, and one supported `fileFormat.code`:
+The response `value` collection must contain exactly one connector with a `displayName` that matches `SourceName` exactly. That connector must have a non-empty UUID `id`, `@odata.type` equal to `#microsoft.graph.industryData.azureDataLakeConnector`, and one supported `fileFormat.code`:
 
 | Connector code | Dataset |
 |---|---|
 | `schoolDataSyncV1` | SDS V1 |
 | `schoolDataSyncV2Rev1` | SDS V2.1 |
 
-The returned `id` is the `ConnectorId`. It remains distinct from `InboundFlowId` even if their UUID text happened to be equal. `ConnectorId` is not a configuration setting. Missing, malformed, unsupported, or unsuccessful connector responses stop the run before Somtoday data is uploaded.
+The returned `id` is the `ConnectorId`. `ConnectorId` is not a configuration setting. A missing, duplicate, malformed, unsupported, or unsuccessful connector response stops the run before Somtoday data is uploaded.
 
 Microsoft Graph Industry Data APIs used here are available only under `/beta`, can change without notice, and are not supported by Microsoft for production use. Operators accept this platform risk when deploying the application.
 
-The runtime identity has `IndustryData-InboundFlow.ReadWrite.All` for inbound-flow and related connector access, `IndustryData-DataConnector.Upload` for the upload session and validation action, and `IndustryData.ReadBasic.All` for reading the validation operation returned in `Location`. This follows Microsoft's automated CSV upload permission model while retaining the additional operation-read permission required by this application's validation polling.
+The runtime identity has `IndustryData-DataConnector.Read.All` to resolve the named connector, `IndustryData-DataConnector.Upload` for the upload session and validation action, and `IndustryData.ReadBasic.All` for reading the validation operation returned in `Location`. This follows Microsoft's automated CSV upload permission model while retaining the additional operation-read permission required by this application's validation polling.
 
 ## One publication unit per run
 
@@ -86,4 +86,4 @@ Graph calls, SAS uploads, and validation polls get at most four total HTTP attem
 
 Before a retry, use `Retry-After` as either delta-seconds or an HTTP date. Without a valid value, wait two seconds, except during validation polling. Consecutive validation polling attempts remain at least five seconds apart: use five seconds when `Retry-After` is missing or shorter, and retain a longer value. Every request and delay preserves application cancellation. The thirty-minute validation deadline also cancels polling and retry delays.
 
-Connector, upload-session, file-upload, validation-start, validation-poll, timeout, and cancellation failures produce process exit code `1`. Safe logs may contain endpoint operation names, file names, attempt counts, numeric HTTP status, connector/inbound-flow identifiers, and exception types; they must not contain authorization headers, access tokens, Somtoday secrets, SAS material, response bodies, CSV values, or personal identifiers.
+Connector, upload-session, file-upload, validation-start, validation-poll, timeout, and cancellation failures produce process exit code `1`. Safe logs may contain endpoint operation names, file names, attempt counts, numeric HTTP status, connector identifiers, and exception types; they must not contain authorization headers, access tokens, Somtoday secrets, SAS material, response bodies, CSV values, or personal identifiers.

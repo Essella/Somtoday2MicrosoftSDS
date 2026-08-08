@@ -9,29 +9,29 @@ namespace Somtoday2MicrosoftSDS.Tests;
 
 public sealed class SdsGraphClientTests
 {
-    private static readonly Guid FlowId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private const string SourceName = "TestSchool";
     private static readonly Guid ConnectorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
     [Theory]
     [InlineData("schoolDataSyncV1", "V1")]
     [InlineData("schoolDataSyncV2Rev1", "V2Rev1")]
-    public async Task ResolvesConnectorThroughInboundFlowAndSelectsItsFormat(
+    public async Task ResolvesConnectorThroughSourceNameAndSelectsItsFormat(
         string code,
         string expected)
     {
         CaptureHandler graph = new(_ => Json(
             HttpStatusCode.OK,
-            $"{{\"id\":\"{ConnectorId}\",\"@odata.type\":\"#microsoft.graph.industryData.azureDataLakeConnector\",\"fileFormat\":{{\"code\":\"{code}\"}}}}"));
+            $"{{\"value\":[{{\"id\":\"{ConnectorId}\",\"displayName\":\"{SourceName}\",\"@odata.type\":\"#microsoft.graph.industryData.azureDataLakeConnector\",\"fileFormat\":{{\"code\":\"{code}\"}}}}]}}"));
         SdsGraphClient client = Client(graph, new CaptureHandler(_ => throw new InvalidOperationException()));
 
-        SdsConnector connector = await client.GetConnectorAsync(FlowId, CancellationToken.None);
+        SdsConnector connector = await client.GetConnectorAsync(SourceName, CancellationToken.None);
 
         Assert.Equal(ConnectorId, connector.Id);
         Assert.Equal(Enum.Parse<SdsDatasetFormat>(expected), connector.Format);
         RequestCapture request = Assert.Single(graph.Requests);
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal(
-            $"https://graph.microsoft.com/beta/external/industryData/inboundFlows/{FlowId:D}/dataConnector",
+            "https://graph.microsoft.com/beta/external/industryData/dataConnectors",
             request.Uri.AbsoluteUri);
         Assert.Equal("Bearer", request.Authorization?.Scheme);
         Assert.Equal("graph-token", request.Authorization?.Parameter);
@@ -42,18 +42,31 @@ public sealed class SdsGraphClientTests
     {
         CaptureHandler graph = new(_ => Json(
             HttpStatusCode.OK,
-            $"{{\"id\":\"{ConnectorId}\",\"@odata.type\":\"#microsoft.graph.industryData.azureDataLakeConnector\",\"fileFormat\":{{\"code\":\"unsupported\"}}}}"));
+            $"{{\"value\":[{{\"id\":\"{ConnectorId}\",\"displayName\":\"{SourceName}\",\"@odata.type\":\"#microsoft.graph.industryData.azureDataLakeConnector\",\"fileFormat\":{{\"code\":\"unsupported\"}}}}]}}"));
         SdsGraphClient client = Client(graph, new CaptureHandler(_ => throw new InvalidOperationException()));
 
         await Assert.ThrowsAsync<SdsPublicationException>(
-            () => client.GetConnectorAsync(FlowId, CancellationToken.None));
+            () => client.GetConnectorAsync(SourceName, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("{\"value\":[]}")]
+    [InlineData("{\"value\":[{\"displayName\":\"TestSchool\"},{\"displayName\":\"TestSchool\"}]}")]
+    public async Task RejectsMissingOrDuplicateSourceNames(string json)
+    {
+        SdsGraphClient client = Client(
+            new CaptureHandler(_ => Json(HttpStatusCode.OK, json)),
+            new CaptureHandler(_ => throw new InvalidOperationException()));
+
+        await Assert.ThrowsAsync<SdsPublicationException>(
+            () => client.GetConnectorAsync(SourceName, CancellationToken.None));
     }
 
     [Theory]
     [InlineData("{}")]
-    [InlineData("{\"id\":\"00000000-0000-0000-0000-000000000000\",\"@odata.type\":\"#microsoft.graph.industryData.azureDataLakeConnector\",\"fileFormat\":{\"code\":\"schoolDataSyncV1\"}}")]
-    [InlineData("{\"id\":\"not-a-guid\",\"@odata.type\":\"#microsoft.graph.industryData.azureDataLakeConnector\",\"fileFormat\":{\"code\":\"schoolDataSyncV1\"}}")]
-    [InlineData("{\"id\":\"22222222-2222-2222-2222-222222222222\",\"@odata.type\":\"#microsoft.graph.industryData.otherConnector\",\"fileFormat\":{\"code\":\"schoolDataSyncV1\"}}")]
+    [InlineData("{\"value\":[{\"id\":\"00000000-0000-0000-0000-000000000000\",\"displayName\":\"TestSchool\",\"@odata.type\":\"#microsoft.graph.industryData.azureDataLakeConnector\",\"fileFormat\":{\"code\":\"schoolDataSyncV1\"}}]}")]
+    [InlineData("{\"value\":[{\"id\":\"not-a-guid\",\"displayName\":\"TestSchool\",\"@odata.type\":\"#microsoft.graph.industryData.azureDataLakeConnector\",\"fileFormat\":{\"code\":\"schoolDataSyncV1\"}}]}")]
+    [InlineData("{\"value\":[{\"id\":\"22222222-2222-2222-2222-222222222222\",\"displayName\":\"TestSchool\",\"@odata.type\":\"#microsoft.graph.industryData.otherConnector\",\"fileFormat\":{\"code\":\"schoolDataSyncV1\"}}]}")]
     public async Task RejectsMalformedConnectorResponses(string json)
     {
         SdsGraphClient client = Client(
@@ -61,7 +74,7 @@ public sealed class SdsGraphClientTests
             new CaptureHandler(_ => throw new InvalidOperationException()));
 
         await Assert.ThrowsAsync<SdsPublicationException>(
-            () => client.GetConnectorAsync(FlowId, CancellationToken.None));
+            () => client.GetConnectorAsync(SourceName, CancellationToken.None));
     }
 
     [Theory]
@@ -73,7 +86,7 @@ public sealed class SdsGraphClientTests
         SdsGraphClient client = Client(graph, new CaptureHandler(_ => throw new InvalidOperationException()));
 
         await Assert.ThrowsAsync<SdsPublicationException>(
-            () => client.GetConnectorAsync(FlowId, CancellationToken.None));
+            () => client.GetConnectorAsync(SourceName, CancellationToken.None));
 
         Assert.Single(graph.Requests);
     }
@@ -235,7 +248,7 @@ public sealed class SdsGraphClientTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => Client(graph, new CaptureHandler(_ => throw new InvalidOperationException()))
-                .GetConnectorAsync(FlowId, cancellation.Token));
+                .GetConnectorAsync(SourceName, cancellation.Token));
         Assert.Empty(graph.Requests);
     }
 

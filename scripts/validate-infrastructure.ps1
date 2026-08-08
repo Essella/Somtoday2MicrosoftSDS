@@ -130,7 +130,7 @@ function Assert-JobTemplate {
     $parameterNames = @($Template.parameters.PSObject.Properties.Name)
     $forbiddenParameterNames = @('environmentName', 'logAnalyticsName', 'environmentMode', 'existingContainerAppsEnvironmentResourceId', 'containerAppsEnvironmentName', 'imageReference', 'cronExpression', 'replicaTimeoutSeconds', 'replicaRetryLimit')
     Assert-Condition -Condition ($Template.parameters.somtodayClientSecret.type -ieq 'secureString') -Message 'infra/deploy-sync-job.bicep must compile somtodayClientSecret as a secureString.'
-    Assert-Condition -Condition (@(@('jobPrefix', 'schoolUuidsCsv', 'inboundFlowId', 'somtodayClientId', 'somtodayClientSecret') | Where-Object { $_ -notin $parameterNames }).Count -eq 0) -Message 'infra/deploy-sync-job.bicep is missing required Job parameters.'
+    Assert-Condition -Condition (@(@('jobPrefix', 'schoolUuidsCsv', 'sourceName', 'somtodayClientId', 'somtodayClientSecret') | Where-Object { $_ -notin $parameterNames }).Count -eq 0) -Message 'infra/deploy-sync-job.bicep is missing required Job parameters.'
     Assert-Condition -Condition (@($forbiddenParameterNames | Where-Object { $_ -in $parameterNames }).Count -eq 0) -Message 'infra/deploy-sync-job.bicep exposes an unsupported parameter.'
     Assert-Condition -Condition (@($Template.resources | Where-Object type -EQ 'Microsoft.Resources/deployments').Count -gt 0) -Message 'infra/deploy-sync-job.bicep must contain the Container Apps Job deployment module.'
     Assert-Condition -Condition (@($Template.resources | Where-Object type -Like 'Microsoft.Graph/*').Count -eq 0) -Message 'infra/deploy-sync-job.bicep must not deploy Microsoft Graph resources.'
@@ -186,7 +186,7 @@ try {
     Assert-Condition -Condition ([regex]::Matches($jobBicep, "resource\s+job\s+'Microsoft\.App/jobs").Count -eq 1) -Message 'infra/job.bicep must contain exactly one Microsoft.App/jobs resource.'
     Assert-Condition -Condition ($jobBicep.Contains("type: 'SystemAssigned'")) -Message 'infra/job.bicep must use a system-assigned identity.'
     Assert-Condition -Condition (-not $syncJobBicep.Contains('Microsoft.Graph/')) -Message 'infra/sync-job.bicep must not deploy Microsoft Graph resources.'
-    foreach ($requiredGraphRole in @('IndustryData-InboundFlow.ReadWrite.All', 'IndustryData-DataConnector.Upload', 'IndustryData.ReadBasic.All')) {
+    foreach ($requiredGraphRole in @('IndustryData-DataConnector.Read.All', 'IndustryData-DataConnector.Upload', 'IndustryData.ReadBasic.All')) {
         Assert-Condition -Condition ($assignSyncJobRolesScript.Contains($requiredGraphRole)) -Message "Required Microsoft Graph role '$requiredGraphRole' is missing from infra/assign-sync-job-roles.ps1."
     }
 

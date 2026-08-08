@@ -72,7 +72,7 @@ public sealed class InfrastructureTemplateTests
 
         Assert.True(parameters.TryGetProperty("jobPrefix", out _));
         Assert.True(parameters.TryGetProperty("schoolUuidsCsv", out _));
-        Assert.True(parameters.TryGetProperty("inboundFlowId", out _));
+        Assert.True(parameters.TryGetProperty("sourceName", out _));
         Assert.True(parameters.TryGetProperty("somtodayClientSecret", out JsonElement secret));
         Assert.Equal("securestring", secret.GetProperty("type").GetString());
         Assert.False(parameters.TryGetProperty("environmentName", out _));
@@ -89,7 +89,7 @@ public sealed class InfrastructureTemplateTests
         Assert.Contains("Connect-MgGraph", script, StringComparison.Ordinal);
         Assert.Contains("'Application.Read.All'", script, StringComparison.Ordinal);
         Assert.Contains("'AppRoleAssignment.ReadWrite.All'", script, StringComparison.Ordinal);
-        Assert.Equal(1, Count(script, "'IndustryData-InboundFlow.ReadWrite.All'"));
+        Assert.Equal(1, Count(script, "'IndustryData-DataConnector.Read.All'"));
         Assert.Equal(1, Count(script, "'IndustryData-DataConnector.Upload'"));
         Assert.Equal(1, Count(script, "'IndustryData.ReadBasic.All'"));
         Assert.Contains("using './deploy-sync-job.bicep'", jobExample, StringComparison.Ordinal);

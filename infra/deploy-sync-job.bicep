@@ -9,10 +9,10 @@ param jobPrefix string
 @minLength(36)
 param schoolUuidsCsv string
 
-@description('Inbound-flow-ID van Microsoft School Data Sync. Dit is niet de connector-ID.')
-@minLength(36)
-@maxLength(36)
-param inboundFlowId string
+@description('Vaste, unieke naam van de Microsoft School Data Sync-bron.')
+@minLength(1)
+@maxLength(100)
+param sourceName string
 
 @description('OAuth-client-ID van Somtoday Connect.')
 @minLength(1)
@@ -60,7 +60,7 @@ module syncJob './sync-job.bicep' = {
     environmentId: environment.id
     location: environment.location
     schoolUuidsCsv: schoolUuidsCsv
-    inboundFlowId: inboundFlowId
+    sourceName: sourceName
     somtodayClientId: somtodayClientId
     somtodayEnvironment: somtodayEnvironment
     somtodayClientSecret: somtodayClientSecret

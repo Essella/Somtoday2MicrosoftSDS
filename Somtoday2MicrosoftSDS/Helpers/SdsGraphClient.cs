@@ -50,25 +50,49 @@ internal sealed class SdsGraphClient
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    internal async Task<SdsConnector> GetConnectorAsync(Guid inboundFlowId, CancellationToken cancellationToken)
+    internal async Task<SdsConnector> GetConnectorAsync(string sourceName, CancellationToken cancellationToken)
     {
-        Uri endpoint = GraphUri($"beta/external/industryData/inboundFlows/{inboundFlowId:D}/dataConnector");
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceName);
+
+        Uri endpoint = GraphUri("beta/external/industryData/dataConnectors");
         using HttpResponseMessage response = await SendGraphAsync(
             () => new HttpRequestMessage(HttpMethod.Get, endpoint),
             cancellationToken);
-        RequireStatus(response, HttpStatusCode.OK, "resolve the SDS data connector");
+        RequireStatus(response, HttpStatusCode.OK, "list SDS data connectors");
 
         using JsonDocument document = await JsonDocument.ParseAsync(
             await response.Content.ReadAsStreamAsync(cancellationToken),
             cancellationToken: cancellationToken);
-        JsonElement root = document.RootElement;
+        if (!document.RootElement.TryGetProperty("value", out JsonElement connectors)
+            || connectors.ValueKind != JsonValueKind.Array)
+        {
+            throw new SdsPublicationException("The SDS data connector list did not contain a connector collection");
+        }
+
+        JsonElement[] matchingConnectors = connectors
+            .EnumerateArray()
+            .Where(connector => connector.TryGetProperty("displayName", out JsonElement displayName)
+                && displayName.ValueKind == JsonValueKind.String
+                && string.Equals(displayName.GetString(), sourceName, StringComparison.Ordinal))
+            .ToArray();
+        if (matchingConnectors.Length == 0)
+        {
+            throw new SdsPublicationException("The SDS data connector list did not contain the configured source name");
+        }
+
+        if (matchingConnectors.Length > 1)
+        {
+            throw new SdsPublicationException("The SDS data connector list contains duplicate configured source names");
+        }
+
+        JsonElement root = matchingConnectors[0];
         string type = RequiredString(root, "@odata.type");
         if (!string.Equals(
             type,
             "#microsoft.graph.industryData.azureDataLakeConnector",
             StringComparison.OrdinalIgnoreCase))
         {
-            throw new SdsPublicationException("The inbound flow data connector is not an azureDataLakeConnector");
+            throw new SdsPublicationException("The SDS data connector is not an azureDataLakeConnector");
         }
 
         if (!Guid.TryParse(RequiredString(root, "id"), out Guid connectorId) || connectorId == Guid.Empty)

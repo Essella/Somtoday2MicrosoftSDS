@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $environmentTagName = 'Somtoday2MicrosoftSDS.environment'
 $jobTagName = 'Somtoday2MicrosoftSDS.instance'
 $requiredRoleValues = @(
-    'IndustryData-InboundFlow.ReadWrite.All'
+    'IndustryData-DataConnector.Read.All'
     'IndustryData-DataConnector.Upload'
     'IndustryData.ReadBasic.All'
 )

@@ -11,7 +11,7 @@ namespace Somtoday2MicrosoftSDS.Tests;
 public sealed class CoreBehaviorTests
 {
     private static readonly Guid SchoolId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-    private static readonly Guid FlowId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private const string SourceName = "TestSchool";
 
     [Fact]
     public void TrackedDefaultsContainNoCredentialsAndFailClosed()
@@ -21,13 +21,13 @@ public sealed class CoreBehaviorTests
 
         Assert.Empty(configuration.GetSection("Somtoday:SchoolUUID").GetChildren());
         Assert.True(string.IsNullOrEmpty(configuration["Somtoday:ClientSecret"]));
-        Assert.True(string.IsNullOrEmpty(configuration["SchoolDataSync:InboundFlowId"]));
+        Assert.True(string.IsNullOrEmpty(configuration["SchoolDataSync:SourceName"]));
         Assert.Null(configuration["Storage:AzureBlob:ServiceUri"]);
         Assert.False(SyncConfiguration.TryCreate(configuration, false, out _, out _));
     }
 
     [Fact]
-    public void ConfigurationAcceptsMultipleUniqueSchoolsAndOneInboundFlow()
+    public void ConfigurationAcceptsMultipleUniqueSchoolsAndOneSourceName()
     {
         Guid secondSchool = Guid.Parse("33333333-3333-3333-3333-333333333333");
         IConfiguration configuration = CreateConfiguration(new Dictionary<string, string>
@@ -39,42 +39,42 @@ public sealed class CoreBehaviorTests
         Assert.True(SyncConfiguration.TryCreate(configuration, false, out SyncConfiguration result, out string[] errors),
             string.Join(Environment.NewLine, errors));
         Assert.Equal([SchoolId, secondSchool], result.SchoolUuids);
-        Assert.Equal(FlowId, result.InboundFlowId);
+        Assert.Equal(SourceName, result.SourceName);
     }
 
     [Fact]
     public void ConfigurationRejectsMissingInvalidOrDuplicateIdentifiers()
     {
-        IConfiguration missingFlow = CreateConfiguration(new Dictionary<string, string>
+        IConfiguration missingSourceName = CreateConfiguration(new Dictionary<string, string>
         {
-            ["SchoolDataSync:InboundFlowId"] = ""
+            ["SchoolDataSync:SourceName"] = ""
         });
         IConfiguration duplicateSchool = CreateConfiguration(new Dictionary<string, string>
         {
             ["Somtoday:SchoolUUID:1"] = SchoolId.ToString()
         });
 
-        Assert.False(SyncConfiguration.TryCreate(missingFlow, true, out _, out string[] flowErrors));
-        Assert.Contains(flowErrors, error => error.Contains("InboundFlowId", StringComparison.Ordinal));
+        Assert.False(SyncConfiguration.TryCreate(missingSourceName, true, out _, out string[] sourceNameErrors));
+        Assert.Contains(sourceNameErrors, error => error.Contains("SourceName", StringComparison.Ordinal));
         Assert.False(SyncConfiguration.TryCreate(duplicateSchool, true, out _, out _));
     }
 
     [Fact]
-    public void ConfigurationRejectsEmptyResourceIdentifiers()
+    public void ConfigurationRejectsEmptySchoolIdentifiersAndBlankSourceNames()
     {
         IConfiguration emptySchool = CreateConfiguration(new Dictionary<string, string>
         {
             ["Somtoday:SchoolUUID:0"] = Guid.Empty.ToString()
         });
-        IConfiguration emptyFlow = CreateConfiguration(new Dictionary<string, string>
+        IConfiguration blankSourceName = CreateConfiguration(new Dictionary<string, string>
         {
-            ["SchoolDataSync:InboundFlowId"] = Guid.Empty.ToString()
+            ["SchoolDataSync:SourceName"] = " \t "
         });
 
         Assert.False(SyncConfiguration.TryCreate(emptySchool, true, out _, out string[] schoolErrors));
         Assert.Contains(schoolErrors, error => error.Contains("empty UUID", StringComparison.Ordinal));
-        Assert.False(SyncConfiguration.TryCreate(emptyFlow, true, out _, out string[] flowErrors));
-        Assert.Contains(flowErrors, error => error.Contains("non-empty UUID", StringComparison.Ordinal));
+        Assert.False(SyncConfiguration.TryCreate(blankSourceName, true, out _, out string[] sourceNameErrors));
+        Assert.Contains(sourceNameErrors, error => error.Contains("SourceName", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -223,7 +223,7 @@ public sealed class CoreBehaviorTests
             ["Somtoday:ClientId"] = "client-id",
             ["Somtoday:ClientSecret"] = "client-secret",
             ["Somtoday:SchoolUUID:0"] = SchoolId.ToString(),
-            ["SchoolDataSync:InboundFlowId"] = FlowId.ToString(),
+            ["SchoolDataSync:SourceName"] = SourceName,
             ["SchoolDataSync:EnableGuardianSync"] = "false"
         };
         foreach ((string key, string value) in overrides)

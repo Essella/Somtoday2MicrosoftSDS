@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "4484405911099985003"
+      "templateHash": "10682806886220255211"
     }
   },
   "parameters": {
@@ -24,12 +24,12 @@
         "description": "Somtoday-instellings-UUIDs, door komma's gescheiden. Meerdere UUIDs vormen samen één SDS-dataset."
       }
     },
-    "inboundFlowId": {
+    "sourceName": {
       "type": "string",
-      "minLength": 36,
-      "maxLength": 36,
+      "minLength": 1,
+      "maxLength": 100,
       "metadata": {
-        "description": "Inbound-flow-ID van Microsoft School Data Sync. Dit is niet de connector-ID."
+        "description": "Vaste, unieke naam van de Microsoft School Data Sync-bron."
       }
     },
     "somtodayClientId": {
@@ -111,8 +111,8 @@
           "schoolUuidsCsv": {
             "value": "[parameters('schoolUuidsCsv')]"
           },
-          "inboundFlowId": {
-            "value": "[parameters('inboundFlowId')]"
+          "sourceName": {
+            "value": "[parameters('sourceName')]"
           },
           "somtodayClientId": {
             "value": "[parameters('somtodayClientId')]"
@@ -146,7 +146,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "5867787479636780582"
+              "templateHash": "9714586694201385077"
             }
           },
           "parameters": {
@@ -171,12 +171,12 @@
                 "description": "Somtoday-instellings-UUIDs, door komma's gescheiden. Meerdere UUIDs vormen samen één SDS-dataset."
               }
             },
-            "inboundFlowId": {
+            "sourceName": {
               "type": "string",
-              "minLength": 36,
-              "maxLength": 36,
+              "minLength": 1,
+              "maxLength": 100,
               "metadata": {
-                "description": "Inbound-flow-ID van Microsoft School Data Sync. Dit is niet de connector-ID."
+                "description": "Vaste, unieke naam van de Microsoft School Data Sync-bron."
               }
             },
             "somtodayClientId": {
@@ -302,13 +302,13 @@
             "cronExpression": "[format('{0} 2,14 * * *', variables('cronMinute'))]",
             "includedLocationCodes": "[filter(variables('normalizedIncludedLocationCodes'), lambda('locationCode', not(empty(lambdaVariables('locationCode')))))]",
             "excludedLocationCodes": "[filter(variables('normalizedExcludedLocationCodes'), lambda('locationCode', not(empty(lambdaVariables('locationCode')))))]",
-            "validatedInboundFlowId": "[if(equals(length(parameters('inboundFlowId')), 36), parameters('inboundFlowId'), fail('inboundFlowId must be a UUID.'))]",
+            "validatedSourceName": "[if(not(empty(trim(parameters('sourceName')))), trim(parameters('sourceName')), fail('sourceName must not be empty.'))]",
             "invalidSchoolUuids": "[filter(variables('schoolUuids'), lambda('uuid', not(equals(length(lambdaVariables('uuid')), 36))))]",
             "validatedSchoolUuids": "[if(and(greater(length(variables('schoolUuids')), 0), equals(length(variables('invalidSchoolUuids')), 0)), variables('schoolUuids'), fail('schoolUuidsCsv must contain one or more comma-separated UUIDs.'))]",
             "jobTags": {
               "Somtoday2MicrosoftSDS.instance": "[variables('normalizedJobPrefix')]",
               "Somtoday2MicrosoftSDS.somtodayEnvironment": "[parameters('somtodayEnvironment')]",
-              "Somtoday2MicrosoftSDS.inboundFlowId": "[variables('validatedInboundFlowId')]",
+              "Somtoday2MicrosoftSDS.sourceName": "[variables('validatedSourceName')]",
               "Somtoday2MicrosoftSDS.schoolUuidCount": "[string(length(variables('validatedSchoolUuids')))]",
               "Somtoday2MicrosoftSDS.cron": "[variables('cronExpression')]"
             },
@@ -330,8 +330,8 @@
                 "value": "[parameters('somtodayEnvironment')]"
               },
               {
-                "name": "SchoolDataSync__InboundFlowId",
-                "value": "[variables('validatedInboundFlowId')]"
+                "name": "SchoolDataSync__SourceName",
+                "value": "[variables('validatedSourceName')]"
               },
               {
                 "name": "SchoolDataSync__EnableGuardianSync",

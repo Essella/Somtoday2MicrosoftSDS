@@ -429,7 +429,7 @@ public class OpenApiAuthenticationTests
     {
         return new SyncConfiguration(
             [SchoolUuid],
-            Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            "TestSchool",
             "client-id",
             "client-secret",
             SomEnvironmentConfig.Prod,

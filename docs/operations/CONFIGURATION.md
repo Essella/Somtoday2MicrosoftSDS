@@ -8,7 +8,7 @@
 | `Somtoday__ClientId` | Required |
 | `Somtoday__ClientSecret` | Required opaque value; use the Job secret or Development User Secrets |
 | `Somtoday__Environment` | `PROD` by default; `TEST` and `ACCEPTATIE` supported; `NIGHTLY` Development-only |
-| `SchoolDataSync__InboundFlowId` | Required non-empty UUID of exactly one SDS inbound flow |
+| `SchoolDataSync__SourceName` | Required non-empty immutable name of exactly one SDS CSV source |
 | `Locations__IncludedLocationCodes__0` and higher | Optional; empty means all locations |
 | `Locations__ExcludedLocationCodes__0` and higher | Optional; exclusion wins |
 | `UsernameFormat__Teacher` | `Emailadres` |
@@ -17,7 +17,7 @@
 
 The Azure CLI Job template accepts institution UUIDs and location codes as comma-separated values. The Bicep deployment trims each value, removes double quotes from institution UUIDs, and removes empty optional location-code entries before it creates the Job environment variables.
 
-Do not configure a connector ID or CSV version. The application resolves the connector from the inbound flow and maps `schoolDataSyncV1` to V1 and `schoolDataSyncV2Rev1` to V2.1. One run combines all successful configured schools into one complete selected-format dataset. A failed school is omitted, but makes the final exit code `1`.
+Do not configure a connector ID or CSV version. Configure the source name that the SDS administrator set for the CSV source. The application lists Graph data connectors and requires exactly one connector with an exact matching display name. It maps `schoolDataSyncV1` to V1 and `schoolDataSyncV2Rev1` to V2.1. One run combines all successful configured schools into one complete selected-format dataset. A failed school is omitted, but makes the final exit code `1`.
 
 After trimming, the first character of `Somtoday__Environment` selects `PROD`, `TEST`, `ACCEPTATIE`, or `NIGHTLY` case-insensitively. A single `P`, `T`, `A`, or `N` is therefore sufficient. Use the complete word in configuration for readability. Every value selected through `N` is Development-only.
 
@@ -35,7 +35,7 @@ Teacher and pupil export is matching-only. Configure SDS not to create unmatched
 
 ## Authentication and secrets
 
-Production Graph access uses `DefaultAzureCredential`, constrained by infrastructure to `ManagedIdentityCredential`. Local development may use any supported `DefaultAzureCredential` developer credential with the required Graph application permissions: `IndustryData-InboundFlow.ReadWrite.All`, `IndustryData-DataConnector.Upload`, and `IndustryData.ReadBasic.All`. Never track the Somtoday secret, Azure tokens, SAS URLs, or production data.
+Production Graph access uses `DefaultAzureCredential`, constrained by infrastructure to `ManagedIdentityCredential`. Local development may use any supported `DefaultAzureCredential` developer credential with the required Graph application permissions: `IndustryData-DataConnector.Read.All`, `IndustryData-DataConnector.Upload`, and `IndustryData.ReadBasic.All`. Never track the Somtoday secret, Azure tokens, SAS URLs, or production data.
 
 Somtoday authentication has four total attempts and retries only network/timeouts, HTTP 408/429, and HTTP 5xx. Other 4xx responses and invalid token payloads fail immediately.
 

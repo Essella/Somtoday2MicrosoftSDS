@@ -4,7 +4,7 @@ namespace Somtoday2MicrosoftSDS.Helpers;
 
 internal sealed record SyncConfiguration(
     Guid[] SchoolUuids,
-    Guid InboundFlowId,
+    string SourceName,
     string ClientId,
     string ClientSecret,
     SomEnvironmentConfig SomEnvironment,
@@ -44,10 +44,10 @@ internal sealed record SyncConfiguration(
             }
         }
 
-        string configuredInboundFlowId = configuration["SchoolDataSync:InboundFlowId"];
-        if (!Guid.TryParse(configuredInboundFlowId, out Guid inboundFlowId) || inboundFlowId == Guid.Empty)
+        string configuredSourceName = configuration["SchoolDataSync:SourceName"];
+        if (string.IsNullOrWhiteSpace(configuredSourceName))
         {
-            validationErrors.Add("SchoolDataSync:InboundFlowId must be a valid non-empty UUID");
+            validationErrors.Add("SchoolDataSync:SourceName is missing");
         }
 
         string clientId = configuration["Somtoday:ClientId"];
@@ -73,7 +73,7 @@ internal sealed record SyncConfiguration(
         value = validationErrors.Count == 0
             ? new SyncConfiguration(
                 schoolUuids.ToArray(),
-                inboundFlowId,
+                configuredSourceName.Trim(),
                 clientId.Trim(),
                 clientSecret,
                 somEnvironment,
