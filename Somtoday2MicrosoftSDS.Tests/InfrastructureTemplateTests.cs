@@ -91,6 +91,7 @@ public sealed class InfrastructureTemplateTests
         Assert.Contains("'containerapp', 'env', 'show'", script, StringComparison.Ordinal);
         Assert.Contains("Read-Host 'Somtoday client secret' -AsSecureString", script, StringComparison.Ordinal);
         Assert.Contains("readEnvironmentVariable('SOMTODAY_CLIENT_SECRET')", script, StringComparison.Ordinal);
+        Assert.Contains("[AllowEmptyString()]", script, StringComparison.Ordinal);
         Assert.DoesNotContain("Write-Host $env:SOMTODAY_CLIENT_SECRET", script, StringComparison.Ordinal);
     }
 

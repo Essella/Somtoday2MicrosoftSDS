@@ -56,6 +56,7 @@ function Read-ValueOrDefault {
 function ConvertTo-BicepString {
     param(
         [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string]$Value
     )
 
