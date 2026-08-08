@@ -302,7 +302,7 @@ internal sealed class SdsGraphClient
     private static bool TryGetValidationOperationId(Uri location, out string operationId)
     {
         operationId = null;
-        if (!location.IsAbsoluteUri || !string.IsNullOrEmpty(location.Query) || !string.IsNullOrEmpty(location.Fragment))
+        if (!location.IsAbsoluteUri)
         {
             return false;
         }

@@ -85,7 +85,7 @@ POST https://graph.microsoft.com/beta/external/industryData/dataConnectors/{Conn
 
 Require `202 Accepted` and a `Location` value. Resolve a relative value against `https://graph.microsoft.com/`. Poll an HTTPS value hosted by `graph.microsoft.com` with authenticated `GET` requests no more frequently than every five seconds and stop after thirty minutes.
 
-For an absolute value on another host, do not send a bearer token to that host. If its path is exactly `/beta/external/industryData/operations/{operationId}` or `/external/industryData/operations/{operationId}`, has no query or fragment, and `operationId` is one to 128 ASCII letters, digits, hyphens, or underscores, construct `https://graph.microsoft.com/beta/external/industryData/operations/{operationId}` and poll that URL. Reject every other value as untrusted.
+For an absolute value on another host, do not send a bearer token to that host. If its path is exactly `/beta/external/industryData/operations/{operationId}` or `/external/industryData/operations/{operationId}`, and `operationId` is one to 128 ASCII letters, digits, hyphens, or underscores, construct `https://graph.microsoft.com/beta/external/industryData/operations/{operationId}` and poll that URL. Ignore a query or fragment from the received URI. Reject every other value as untrusted.
 
 Interpret validation status case-insensitively:
 

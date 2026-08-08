@@ -372,7 +372,7 @@ public sealed class SdsGraphClientTests
                 "{\"sessionUrl\":\"https://storage.test/container?sig=secret\"}"),
             var path when path.EndsWith("/validate", StringComparison.Ordinal) => Response(
                 HttpStatusCode.Accepted,
-                "https://validation.service.test/beta/external/industryData/operations/operation-id"),
+                "https://validation.service.test/beta/external/industryData/operations/operation-id?opaque=value#client-fragment"),
             var path when path.EndsWith("/operations/operation-id", StringComparison.Ordinal) =>
                 Json(HttpStatusCode.OK, "{\"status\":\"succeeded\"}"),
             _ => throw new InvalidOperationException(request.RequestUri.AbsoluteUri)
