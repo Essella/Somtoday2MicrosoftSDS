@@ -3,12 +3,12 @@ targetScope = 'resourceGroup'
 @description('Volledige naam voor de Azure Container Apps Environment.')
 @minLength(2)
 @maxLength(60)
-param environmentName string
+param environmentName string = 'prod-somtoday2sds-env'
 
 @description('Naam voor de Log Analytics Workspace die bij deze Environment hoort.')
 @minLength(4)
 @maxLength(63)
-param logAnalyticsName string
+param logAnalyticsName string = 'prod-somtoday2sds-log-analytics'
 
 var environmentTagName = 'Somtoday2MicrosoftSDS.environment'
 var existingResourceGroupTags = resourceGroup().tags ?? {}

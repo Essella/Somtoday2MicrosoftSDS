@@ -5,38 +5,26 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "15884139652216798020"
+      "templateHash": "17472441704739512980"
     }
   },
   "parameters": {
     "jobPrefix": {
       "type": "string",
+      "defaultValue": "prod-sds-profielnaam",
       "minLength": 1,
       "maxLength": 27,
       "metadata": {
-        "description": "Korte prefix voor deze extra Somtoday-syncjob. De uiteindelijke Job-naam wordt <prefix>-job. Maximaal 27 tekens."
-      }
-    },
-    "schoolUuidsCsv": {
-      "type": "string",
-      "minLength": 36,
-      "metadata": {
-        "description": "Somtoday-instellings-UUIDs, door komma's gescheiden. Meerdere UUIDs vormen samen één SDS-dataset."
+        "description": "Korte prefix voor deze extra Somtoday-syncjob. De uiteindelijke Job-naam wordt prefix-job. Maximaal 27 tekens."
       }
     },
     "sourceName": {
       "type": "string",
+      "defaultValue": "SchoolDataSync-profielnaam",
       "minLength": 1,
       "maxLength": 100,
       "metadata": {
         "description": "Vaste, unieke naam van de Microsoft School Data Sync-bron."
-      }
-    },
-    "somtodayClientId": {
-      "type": "string",
-      "minLength": 1,
-      "metadata": {
-        "description": "OAuth-client-ID van Somtoday Connect."
       }
     },
     "somtodayEnvironment": {
@@ -47,6 +35,22 @@
         "TEST",
         "ACCEPTATIE"
       ]
+    },
+    "schoolUuidsCsv": {
+      "type": "string",
+      "defaultValue": "11111111-1111-1111-1111-111111111111,22222222-2222-2222-2222-222222222222",
+      "minLength": 36,
+      "metadata": {
+        "description": "Somtoday-instellings-UUIDs, door kommas gescheiden. Meerdere UUIDs vormen samen een SDS-dataset."
+      }
+    },
+    "somtodayClientId": {
+      "type": "string",
+      "defaultValue": "00000000-0000-0000-0000-000000000000",
+      "minLength": 1,
+      "metadata": {
+        "description": "OAuth-client-ID van Somtoday Connect."
+      }
     },
     "somtodayClientSecret": {
       "type": "securestring",
@@ -59,14 +63,14 @@
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Optionele opgenomen locatiecodes, door komma's gescheiden. Leeg betekent geen inclusiefilter."
+        "description": "Optionele opgenomen locatiecodes, door kommas gescheiden. Leeg betekent geen inclusiefilter."
       }
     },
     "excludedLocationCodesCsv": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Optionele uitgesloten locatiecodes, door komma's gescheiden. Leeg betekent geen exclusiefilter."
+        "description": "Optionele uitgesloten locatiecodes, door kommas gescheiden. Leeg betekent geen exclusiefilter."
       }
     },
     "enableGuardianSync": {
@@ -108,17 +112,17 @@
           "location": {
             "value": "[reference(resourceId('Microsoft.App/managedEnvironments', variables('validatedEnvironmentName')), '2024-03-01', 'full').location]"
           },
-          "schoolUuidsCsv": {
-            "value": "[parameters('schoolUuidsCsv')]"
-          },
           "sourceName": {
             "value": "[parameters('sourceName')]"
           },
-          "somtodayClientId": {
-            "value": "[parameters('somtodayClientId')]"
-          },
           "somtodayEnvironment": {
             "value": "[parameters('somtodayEnvironment')]"
+          },
+          "schoolUuidsCsv": {
+            "value": "[parameters('schoolUuidsCsv')]"
+          },
+          "somtodayClientId": {
+            "value": "[parameters('somtodayClientId')]"
           },
           "somtodayClientSecret": {
             "value": "[parameters('somtodayClientSecret')]"

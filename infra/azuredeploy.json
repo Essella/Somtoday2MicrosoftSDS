@@ -5,12 +5,13 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "6054142112736861212"
+      "templateHash": "1876129891491753587"
     }
   },
   "parameters": {
     "environmentName": {
       "type": "string",
+      "defaultValue": "prod-somtoday2sds-env",
       "minLength": 2,
       "maxLength": 60,
       "metadata": {
@@ -19,6 +20,7 @@
     },
     "logAnalyticsName": {
       "type": "string",
+      "defaultValue": "prod-somtoday2sds-log-analytics",
       "minLength": 4,
       "maxLength": 63,
       "metadata": {
