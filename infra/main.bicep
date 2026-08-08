@@ -3,7 +3,7 @@ targetScope = 'resourceGroup'
 @description('Volledige naam voor de Azure Container Apps Environment.')
 @minLength(2)
 @maxLength(60)
-param environmentName string = 'prod-somtoday2sds-env'
+param environmentName string = 'prod-somtoday2sds-appenv'
 
 @description('Naam voor de Log Analytics Workspace die bij deze Environment hoort.')
 @minLength(4)

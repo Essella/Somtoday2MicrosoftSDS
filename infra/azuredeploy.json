@@ -5,13 +5,13 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "1876129891491753587"
+      "templateHash": "1148080822225820346"
     }
   },
   "parameters": {
     "environmentName": {
       "type": "string",
-      "defaultValue": "prod-somtoday2sds-env",
+      "defaultValue": "prod-somtoday2sds-appenv",
       "minLength": 2,
       "maxLength": 60,
       "metadata": {
