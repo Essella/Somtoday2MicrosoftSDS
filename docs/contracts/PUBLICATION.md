@@ -43,24 +43,37 @@ The response must be `200 OK` and contain an absolute HTTPS `sessionUrl` with a 
 
 For each dataset file, append one URL-escaped file-name segment to the session container path before the original `?`. Preserve the original SAS querystring exactly, including ordering and escaping. Reject empty file names, nested paths, fragments, non-HTTPS URLs, or URLs without a SAS querystring.
 
-## Complete BlockBlob upload
+## Azure Data Lake Storage Gen2 upload
 
-Upload files sequentially in the dataset's defined order. Use the Azure Storage `Put Blob` REST operation for one complete BlockBlob:
+Upload files sequentially in the dataset's defined order with the Azure Data Lake Storage Gen2 path protocol. Preserve the original SAS querystring exactly, then append the fixed operation query parameters after it.
 
-```text
-PUT {session-container}/{escaped-file-name}?{original-sas-query}
-```
+For each file, do these requests in order:
 
-Each request contains exactly the serialized CSV bytes and these headers:
+1. Create an empty file:
 
-- `Content-Type: application/vnd.ms-excel`
-- `Content-Length: <exact byte count>`
-- `x-ms-version: 2023-11-03`
-- `x-ms-blob-content-type: application/vnd.ms-excel`
-- `x-ms-blob-type: BlockBlob`
-- `x-ms-meta-uploadvia: PortalUpload`
+   ```text
+   PUT {session-container}/{escaped-file-name}?{original-sas-query}&resource=file
+   ```
 
-Only `201 Created` is success. Stop after the first failed file and do not call validation. The temporary SDS-owned container expires according to the upload-session response; the application does not delete, promote, version, retain, or roll back its contents.
+   Send `Content-Length: 0` and `x-ms-version: 2023-11-03`. Only `201 Created` is success.
+
+2. Append the complete serialized CSV byte stream at offset zero:
+
+   ```text
+   PATCH {session-container}/{escaped-file-name}?{original-sas-query}&action=append&position=0
+   ```
+
+   Send the exact serialized bytes with `Content-Type: application/octet-stream`, the exact `Content-Length`, and `x-ms-version: 2023-11-03`. Only `202 Accepted` is success.
+
+3. Flush the complete file:
+
+   ```text
+   PATCH {session-container}/{escaped-file-name}?{original-sas-query}&action=flush&position={exact-byte-count}
+   ```
+
+   Send `Content-Length: 0`, `x-ms-version: 2023-11-03`, and `x-ms-content-type: application/vnd.ms-excel`. Only `200 OK` is success.
+
+Stop after the first failed request and do not call validation. The temporary SDS-owned container expires according to the upload-session response; the application does not delete, promote, version, retain, or roll back its contents.
 
 ## Validation
 

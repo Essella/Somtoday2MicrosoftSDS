@@ -99,7 +99,7 @@ public sealed class SdsGraphClientTests
         {
             var path when path.EndsWith("/getUploadSession", StringComparison.Ordinal) => Json(
                 HttpStatusCode.OK,
-                "{\"sessionUrl\":\"https://temporary.blob.core.windows.net/container/sub?sv=2023-11-03&sig=secret%2Bvalue\"}"),
+                "{\"sessionUrl\":\"https://temporary.dfs.core.windows.net/container/sub?sv=2023-11-03&sig=secret%2Bvalue\"}"),
             var path when path.EndsWith("/validate", StringComparison.Ordinal) => Response(
                 HttpStatusCode.Accepted,
                 location: "https://graph.microsoft.com/beta/external/industryData/operations/operation-id"),
@@ -107,35 +107,53 @@ public sealed class SdsGraphClientTests
                 Json(HttpStatusCode.OK, ++pollCount == 1 ? "{\"status\":\"running\"}" : "{\"status\":\"succeeded\"}"),
             _ => throw new InvalidOperationException(request.RequestUri.AbsoluteUri)
         });
-        CaptureHandler uploads = new(_ => Response(HttpStatusCode.Created));
+        CaptureHandler uploads = new(SuccessfulDataLakeUpload);
         SdsGraphClient client = Client(graph, uploads);
         PublicationDataset dataset = new FileHelper().CreateEmptyV1Dataset(includeGuardianSync: false);
 
         await client.UploadAndValidateAsync(ConnectorId, dataset, CancellationToken.None);
 
-        Assert.Equal(6, uploads.Requests.Count);
+        Assert.Equal(18, uploads.Requests.Count);
         Assert.Contains(
             graph.Requests,
             request => request.Uri.AbsolutePath.EndsWith(
                 "/microsoft.graph.industryData.azureDataLakeConnector/getUploadSession",
                 StringComparison.Ordinal));
-        Assert.All(uploads.Requests, request =>
+        foreach ((PublicationFile file, int index) in dataset.Files.Select((file, index) => (file, index)))
         {
-            Assert.Equal(HttpMethod.Put, request.Method);
-            Assert.Null(request.Authorization);
-            Assert.Equal("sv=2023-11-03&sig=secret%2Bvalue", request.Uri.Query.TrimStart('?'));
-            Assert.Equal("application/vnd.ms-excel", request.ContentType);
-            Assert.Equal(request.Content.LongLength, request.ContentLength);
-            Assert.Equal("2023-11-03", request.Header("x-ms-version"));
-            Assert.Equal("application/vnd.ms-excel", request.Header("x-ms-blob-content-type"));
-            Assert.Equal("BlockBlob", request.Header("x-ms-blob-type"));
-            Assert.Equal("PortalUpload", request.Header("x-ms-meta-uploadvia"));
-        });
-        Assert.Equal(dataset.Files.Select(file => file.Name), uploads.Requests.Select(request => request.Uri.Segments[^1]));
-        Assert.Equal(
-            dataset.Files.Select(file => file.Content.ToArray()),
-            uploads.Requests.Select(request => request.Content),
-            ByteArrayComparer.Instance);
+            RequestCapture create = uploads.Requests[index * 3];
+            RequestCapture append = uploads.Requests[index * 3 + 1];
+            RequestCapture flush = uploads.Requests[index * 3 + 2];
+
+            Assert.Equal(HttpMethod.Put, create.Method);
+            Assert.Equal("sv=2023-11-03&sig=secret%2Bvalue&resource=file", create.Uri.Query.TrimStart('?'));
+            Assert.Empty(create.Content);
+            Assert.Equal(0, create.ContentLength);
+
+            Assert.Equal(HttpMethod.Patch, append.Method);
+            Assert.Equal("sv=2023-11-03&sig=secret%2Bvalue&action=append&position=0", append.Uri.Query.TrimStart('?'));
+            Assert.Equal("application/octet-stream", append.ContentType);
+            Assert.Equal(file.Content.ToArray(), append.Content);
+            Assert.Equal(append.Content.LongLength, append.ContentLength);
+
+            Assert.Equal(HttpMethod.Patch, flush.Method);
+            Assert.Equal(
+                $"sv=2023-11-03&sig=secret%2Bvalue&action=flush&position={file.Content.Length}",
+                flush.Uri.Query.TrimStart('?'));
+            Assert.Empty(flush.Content);
+            Assert.Equal(0, flush.ContentLength);
+            Assert.Equal("application/vnd.ms-excel", flush.Header("x-ms-content-type"));
+
+            foreach (RequestCapture request in new[] { create, append, flush })
+            {
+                Assert.Null(request.Authorization);
+                Assert.Equal(file.Name, request.Uri.Segments[^1]);
+                Assert.Equal("2023-11-03", request.Header("x-ms-version"));
+                Assert.False(request.Headers.ContainsKey("x-ms-blob-content-type"));
+                Assert.False(request.Headers.ContainsKey("x-ms-blob-type"));
+                Assert.False(request.Headers.ContainsKey("x-ms-meta-uploadvia"));
+            }
+        }
 
         RequestCapture startValidation = Assert.Single(
             graph.Requests,
@@ -151,9 +169,9 @@ public sealed class SdsGraphClientTests
         CaptureHandler graph = new(request => Json(
             HttpStatusCode.OK,
             "{\"sessionUrl\":\"https://temporary.blob.core.windows.net/container?sig=secret\"}"));
-        CaptureHandler uploads = new(_ => StorageError(
-            HttpStatusCode.BadRequest,
-            "InvalidHeaderValue"));
+        CaptureHandler uploads = new(request => request.Method == HttpMethod.Put
+            ? Response(HttpStatusCode.Created)
+            : StorageError(HttpStatusCode.BadRequest, "InvalidHeaderValue"));
         SdsGraphClient client = Client(graph, uploads);
 
         SdsPublicationException exception = await Assert.ThrowsAsync<SdsPublicationException>(() => client.UploadAndValidateAsync(
@@ -161,11 +179,11 @@ public sealed class SdsGraphClientTests
             new FileHelper().CreateEmptyV1Dataset(false),
             CancellationToken.None));
 
-        Assert.Equal("upload SDS CSV file 'School.csv'", exception.SafeOperation);
+        Assert.Equal("append SDS CSV file 'School.csv'", exception.SafeOperation);
         Assert.Equal(
-            "SdsPublicationException (upload SDS CSV file 'School.csv'; HTTP 400; x-ms-error-code=InvalidHeaderValue)",
+            "SdsPublicationException (append SDS CSV file 'School.csv'; HTTP 400; x-ms-error-code=InvalidHeaderValue)",
             SafeExceptionSummary.Create(exception));
-        Assert.Single(uploads.Requests);
+        Assert.Equal(2, uploads.Requests.Count);
         Assert.DoesNotContain(graph.Requests, request => request.Method == HttpMethod.Post);
     }
 
@@ -234,7 +252,7 @@ public sealed class SdsGraphClientTests
     public async Task RejectsMissingOrInvalidSessionUrlBeforeUpload(string json)
     {
         CaptureHandler graph = new(_ => Json(HttpStatusCode.OK, json));
-        CaptureHandler uploads = new(_ => Response(HttpStatusCode.Created));
+        CaptureHandler uploads = new(SuccessfulDataLakeUpload);
         SdsGraphClient client = Client(graph, uploads);
 
         await Assert.ThrowsAsync<SdsPublicationException>(() => client.UploadAndValidateAsync(
@@ -271,7 +289,7 @@ public sealed class SdsGraphClientTests
                 "https://graph.microsoft.com/beta/external/industryData/operations/operation-id"),
             _ => throw new InvalidOperationException(request.RequestUri.AbsoluteUri)
         });
-        CaptureHandler uploads = new(_ => Response(HttpStatusCode.Created));
+        CaptureHandler uploads = new(SuccessfulDataLakeUpload);
         Func<TimeSpan, CancellationToken, Task> noDelay = (_, _) => Task.CompletedTask;
         SdsGraphClient client = new(
             new HttpClient(graph),
@@ -310,7 +328,7 @@ public sealed class SdsGraphClientTests
 
         await Assert.ThrowsAsync<SdsPublicationException>(() => Client(
             graph,
-            new CaptureHandler(_ => Response(HttpStatusCode.Created)))
+            new CaptureHandler(SuccessfulDataLakeUpload))
             .UploadAndValidateAsync(
                 ConnectorId,
                 new FileHelper().CreateEmptyV1Dataset(false),
@@ -348,9 +366,9 @@ public sealed class SdsGraphClientTests
         CaptureHandler graph = new(_ => Json(
             HttpStatusCode.OK,
             "{\"sessionUrl\":\"https://temporary.blob.core.windows.net/container?sig=secret\"}"));
-        CaptureHandler uploads = new(_ => StorageError(
-            HttpStatusCode.BadRequest,
-            "private-value?sig=secret"));
+        CaptureHandler uploads = new(request => request.Method == HttpMethod.Put
+            ? Response(HttpStatusCode.Created)
+            : StorageError(HttpStatusCode.BadRequest, "private-value?sig=secret"));
         SdsPublicationException exception = await Assert.ThrowsAsync<SdsPublicationException>(() => Client(
             graph,
             uploads).UploadAndValidateAsync(
@@ -419,7 +437,7 @@ public sealed class SdsGraphClientTests
         });
         SdsGraphClient client = new(
             new HttpClient(graph),
-            new HttpClient(new CaptureHandler(_ => Response(HttpStatusCode.Created))),
+            new HttpClient(new CaptureHandler(SuccessfulDataLakeUpload)),
             new StaticTokenCredential(),
             retryPolicy,
             delayAsync: (delay, cancellationToken) =>
@@ -458,6 +476,9 @@ public sealed class SdsGraphClientTests
             "School.csv");
 
         Assert.Equal("https://storage.test/container/School.csv?sv=1&sig=a%2Bb", result.AbsoluteUri);
+        Assert.Equal(
+            "https://storage.test/container/School.csv?sv=1&sig=a%2Bb&resource=file",
+            SdsGraphClient.BuildDataLakeOperationUri(result, "resource=file").AbsoluteUri);
         Assert.Throws<SdsPublicationException>(() => SdsGraphClient.BuildUploadUri(
             new Uri("http://storage.test/container?sig=x"),
             "School.csv"));
@@ -504,6 +525,18 @@ public sealed class SdsGraphClientTests
         HttpResponseMessage response = Response(status);
         response.Headers.Add("x-ms-error-code", errorCode);
         return response;
+    }
+
+    private static HttpResponseMessage SuccessfulDataLakeUpload(HttpRequestMessage request)
+    {
+        string query = request.RequestUri.Query;
+        return request.Method.Method switch
+        {
+            "PUT" when query.EndsWith("&resource=file", StringComparison.Ordinal) => Response(HttpStatusCode.Created),
+            "PATCH" when query.EndsWith("&action=append&position=0", StringComparison.Ordinal) => Response(HttpStatusCode.Accepted),
+            "PATCH" when query.Contains("&action=flush&position=", StringComparison.Ordinal) => Response(HttpStatusCode.OK),
+            _ => throw new InvalidOperationException(request.RequestUri.AbsoluteUri)
+        };
     }
 
     private sealed class StaticTokenCredential : TokenCredential

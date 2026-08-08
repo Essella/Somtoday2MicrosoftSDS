@@ -170,6 +170,21 @@ internal sealed class SdsGraphClient
         return new Uri($"{container}/{Uri.EscapeDataString(fileName)}{query}", UriKind.Absolute);
     }
 
+    internal static Uri BuildDataLakeOperationUri(Uri fileUri, string operationQuery)
+    {
+        ArgumentNullException.ThrowIfNull(fileUri);
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationQuery);
+        if (!fileUri.IsAbsoluteUri
+            || !string.Equals(fileUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrEmpty(fileUri.Query)
+            || !string.IsNullOrEmpty(fileUri.Fragment))
+        {
+            throw new SdsPublicationException("The SDS upload session returned an invalid SAS URL");
+        }
+
+        return new Uri($"{fileUri.AbsoluteUri}&{operationQuery}", UriKind.Absolute);
+    }
+
     private async Task<Uri> CreateUploadSessionAsync(Guid connectorId, CancellationToken cancellationToken)
     {
         Uri endpoint = GraphUri(
@@ -193,29 +208,60 @@ internal sealed class SdsGraphClient
     }
 
     private async Task UploadFileAsync(
-        Uri uploadUri,
+        Uri fileUri,
         PublicationFile file,
         CancellationToken cancellationToken)
     {
         byte[] bytes = file.Content.ToArray();
-        using HttpResponseMessage response = await _retryPolicy.SendAsync(
+        using HttpResponseMessage createResponse = await _retryPolicy.SendAsync(
             _uploadClient,
             () =>
             {
-                HttpRequestMessage request = new(HttpMethod.Put, uploadUri);
-                ByteArrayContent content = new(bytes);
-                content.Headers.ContentType = MediaTypeHeaderValue.Parse("application/vnd.ms-excel");
-                content.Headers.ContentLength = bytes.LongLength;
+                HttpRequestMessage request = new(
+                    HttpMethod.Put,
+                    BuildDataLakeOperationUri(fileUri, "resource=file"));
+                ByteArrayContent content = new([]);
+                content.Headers.ContentLength = 0;
                 request.Content = content;
                 request.Headers.TryAddWithoutValidation("x-ms-version", "2023-11-03");
-                request.Headers.TryAddWithoutValidation("x-ms-blob-content-type", "application/vnd.ms-excel");
-                request.Headers.TryAddWithoutValidation("x-ms-blob-type", "BlockBlob");
-                request.Headers.TryAddWithoutValidation("x-ms-meta-uploadvia", "PortalUpload");
                 return request;
             },
             cancellationToken);
+        RequireStatus(createResponse, HttpStatusCode.Created, $"create SDS file '{file.Name}'");
 
-        RequireStatus(response, HttpStatusCode.Created, $"upload SDS CSV file '{file.Name}'");
+        using HttpResponseMessage appendResponse = await _retryPolicy.SendAsync(
+            _uploadClient,
+            () =>
+            {
+                HttpRequestMessage request = new(
+                    HttpMethod.Patch,
+                    BuildDataLakeOperationUri(fileUri, "action=append&position=0"));
+                ByteArrayContent content = new(bytes);
+                content.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+                content.Headers.ContentLength = bytes.LongLength;
+                request.Content = content;
+                request.Headers.TryAddWithoutValidation("x-ms-version", "2023-11-03");
+                return request;
+            },
+            cancellationToken);
+        RequireStatus(appendResponse, HttpStatusCode.Accepted, $"append SDS CSV file '{file.Name}'");
+
+        using HttpResponseMessage flushResponse = await _retryPolicy.SendAsync(
+            _uploadClient,
+            () =>
+            {
+                HttpRequestMessage request = new(
+                    HttpMethod.Patch,
+                    BuildDataLakeOperationUri(fileUri, $"action=flush&position={bytes.LongLength}"));
+                ByteArrayContent content = new([]);
+                content.Headers.ContentLength = 0;
+                request.Content = content;
+                request.Headers.TryAddWithoutValidation("x-ms-version", "2023-11-03");
+                request.Headers.TryAddWithoutValidation("x-ms-content-type", "application/vnd.ms-excel");
+                return request;
+            },
+            cancellationToken);
+        RequireStatus(flushResponse, HttpStatusCode.OK, $"flush SDS CSV file '{file.Name}'");
     }
 
     private async Task<Uri> StartValidationAsync(Guid connectorId, CancellationToken cancellationToken)

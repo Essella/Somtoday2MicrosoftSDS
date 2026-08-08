@@ -25,7 +25,7 @@ dotnet publish Somtoday2MicrosoftSDS/Somtoday2MicrosoftSDS.csproj --configuratio
 
 The infrastructure validation requires Azure CLI with Bicep support. It compiles the environment and `deploy-sync-job` templates with their example parameter files, checks the tag-based Environment hand-off and fixed Job settings, checks that Graph role assignment is performed by the Cloud Shell role-assignment script, and compares the generated templates with `infra/azuredeploy.json` and `infra/azuredeploy-sync-job.json`.
 
-Transport tests use in-memory HTTP handlers and synthetic CSV content. They verify Graph endpoint composition, connector format selection, exact SAS query retention, required PUT headers, bearer-token separation, retries, validation polling, and failure boundaries without contacting Azure or SDS.
+Transport tests use in-memory HTTP handlers and synthetic CSV content. They verify Graph endpoint composition, connector format selection, exact SAS query retention, Azure Data Lake Gen2 file create/append/flush requests, bearer-token separation, retries, validation polling, and failure boundaries without contacting Azure or SDS.
 
 Live Somtoday tests remain opt-in through `scripts/Test-SomtodayOpenApi.ps1`; normal test runs skip them. The Somtoday OpenAPI files are generated artifacts and may be changed only under the repository's explicit source/version/tool record rule.
 

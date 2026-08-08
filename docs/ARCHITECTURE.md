@@ -7,7 +7,7 @@
 - `OpenAPIHelper` owns Somtoday authentication and reads. It uses separate no-redirect clients for authentication, public discovery, and authenticated data, and it preserves cancellation and the existing bounded authentication retries.
 - `ExportPopulationResolver`, `SDScsvHelperV1`, and `SDScsvHelperV2` own population and field mapping. They have no network or Azure side effects.
 - `FileHelper` constructs a complete in-memory CSV set in UTF-8 without BOM before publication starts.
-- `SdsGraphClient` owns connector resolution, Graph authentication, upload-session creation, unauthenticated SAS PUTs, validation start, and validation polling.
+- `SdsGraphClient` owns connector resolution, Graph authentication, upload-session creation, unauthenticated Azure Data Lake Storage Gen2 file create, append, and flush requests, validation start, and validation polling.
 - `HttpRetryPolicy` owns the shared four-attempt transient HTTP policy.
 
 ## Run sequence
@@ -19,7 +19,7 @@
 5. Download and resolve all successful institutions, or build the selected header-only set.
 6. Construct one complete in-memory dataset from the successful subset.
 7. Request a fresh upload session with `resetSession=true`.
-8. PUT every file sequentially to the returned SAS container without a Graph bearer token.
+8. Create, append, and flush every file sequentially in the returned Azure Data Lake Storage Gen2 SAS container without a Graph bearer token.
 9. Start connector validation and poll the returned Graph operation every five seconds.
 10. Exit `0` only when SDS succeeds and every configured school succeeded; otherwise exit `1`.
 
