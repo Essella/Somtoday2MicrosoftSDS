@@ -9,7 +9,7 @@ Only the latest release receives security fixes. Report suspected vulnerabilitie
 - Never commit Somtoday secrets, Azure tokens, SAS URLs or query strings, authentication bodies, or production CSV data.
 - Supply `somtodayClientSecret` only through the secure deployment parameter. It becomes a Container Apps Job secret exposed as `Somtoday__ClientSecret`.
 - Production Graph access is constrained to the Job's system-assigned managed identity. The Cloud Shell role-assignment script grants only `IndustryData-DataConnector.Read.All`, `IndustryData-DataConnector.Upload`, and the validation-operation polling permission `IndustryData.ReadBasic.All` to tagged Jobs in tagged resource groups.
-- The Graph bearer token is sent only to `graph.microsoft.com`. SAS uploads use a separate `HttpClient` and never receive an Authorization header.
+- The Graph bearer token is sent to `graph.microsoft.com` and to the validation-operation URI in the `Location` header of an accepted Microsoft Graph validation response. SAS uploads use a separate `HttpClient` and never receive an Authorization header. Validation clients do not follow redirects.
 - Treat the upload-session URL as a secret. Preserve its query string for upload but never log it, a filename URL containing it, or response bodies that may expose it.
 - For an SAS upload failure, logs can include `x-ms-error-code` only after strict ASCII alphanumeric validation. Do not log other response headers or response bodies.
 - CSV data is built in memory and persists only in the temporary SDS-owned SAS container. This repository provisions no application Storage Account.

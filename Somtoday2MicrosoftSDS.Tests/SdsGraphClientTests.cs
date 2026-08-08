@@ -363,7 +363,7 @@ public sealed class SdsGraphClientTests
     }
 
     [Fact]
-    public async Task MapsAnAlternateHostValidationOperationToMicrosoftGraph()
+    public async Task PollsAnAlternateHostValidationLocationReturnedByMicrosoft()
     {
         CaptureHandler graph = new(request => request.RequestUri.AbsolutePath switch
         {
@@ -385,12 +385,39 @@ public sealed class SdsGraphClientTests
 
         RequestCapture poll = Assert.Single(graph.Requests, request =>
             request.Uri.AbsolutePath.EndsWith("/operations/operation-id", StringComparison.Ordinal));
-        Assert.Equal("https://graph.microsoft.com", poll.Uri.GetLeftPart(UriPartial.Authority));
+        Assert.Equal("https://validation.service.test", poll.Uri.GetLeftPart(UriPartial.Authority));
         Assert.Equal("Bearer", poll.Authorization?.Scheme);
     }
 
     [Fact]
-    public async Task RejectsAnUntrustedValidationLocationOutsideTheDocumentedOperationRoute()
+    public async Task PollsTheSdsServiceValidationLocationReturnedByMicrosoft()
+    {
+        CaptureHandler graph = new(request => request.RequestUri.AbsolutePath switch
+        {
+            var path when path.EndsWith("/getUploadSession", StringComparison.Ordinal) => Json(
+                HttpStatusCode.OK,
+                "{\"sessionUrl\":\"https://storage.test/container?sig=secret\"}"),
+            var path when path.EndsWith("/validate", StringComparison.Ordinal) => Response(
+                HttpStatusCode.Accepted,
+                "https://validation.service.test:8698/api/industryData/v0.4-beta/industryData/operations/operation-id"),
+            var path when path.EndsWith("/operations/operation-id", StringComparison.Ordinal) =>
+                Json(HttpStatusCode.OK, "{\"status\":\"succeeded\"}"),
+            _ => throw new InvalidOperationException(request.RequestUri.AbsoluteUri)
+        });
+
+        await Client(graph, new CaptureHandler(SuccessfulDataLakeUpload)).UploadAndValidateAsync(
+            ConnectorId,
+            new FileHelper().CreateEmptyV1Dataset(false),
+            CancellationToken.None);
+
+        RequestCapture poll = Assert.Single(graph.Requests, request =>
+            request.Uri.AbsolutePath.EndsWith("/operations/operation-id", StringComparison.Ordinal));
+        Assert.Equal("https://validation.service.test:8698", poll.Uri.GetLeftPart(UriPartial.Authority));
+        Assert.Equal("Bearer", poll.Authorization?.Scheme);
+    }
+
+    [Fact]
+    public async Task PollsAValidationLocationOutsideTheDocumentedOperationRoute()
     {
         CaptureHandler graph = new(request => request.RequestUri.AbsolutePath switch
         {
@@ -400,22 +427,22 @@ public sealed class SdsGraphClientTests
             var path when path.EndsWith("/validate", StringComparison.Ordinal) => Response(
                 HttpStatusCode.Accepted,
                 "https://validation.service.test/other/operation-id"),
+            var path when path.EndsWith("/other/operation-id", StringComparison.Ordinal) =>
+                Json(HttpStatusCode.OK, "{\"status\":\"succeeded\"}"),
             _ => throw new InvalidOperationException(request.RequestUri.AbsoluteUri)
         });
 
-        SdsPublicationException exception = await Assert.ThrowsAsync<SdsPublicationException>(() => Client(
+        await Client(
             graph,
             new CaptureHandler(SuccessfulDataLakeUpload)).UploadAndValidateAsync(
                 ConnectorId,
                 new FileHelper().CreateEmptyV1Dataset(false),
-                CancellationToken.None));
+                CancellationToken.None);
 
-        Assert.DoesNotContain(graph.Requests, request =>
-            request.Uri.AbsolutePath.Contains("/operations/", StringComparison.Ordinal));
-        Assert.Contains(
-            "Location=https://validation.service.test/other/operation-id",
-            SafeExceptionSummary.Create(exception),
-            StringComparison.Ordinal);
+        RequestCapture poll = Assert.Single(graph.Requests, request =>
+            request.Uri.AbsolutePath.EndsWith("/other/operation-id", StringComparison.Ordinal));
+        Assert.Equal("https://validation.service.test", poll.Uri.GetLeftPart(UriPartial.Authority));
+        Assert.Equal("Bearer", poll.Authorization?.Scheme);
     }
 
     [Fact]
