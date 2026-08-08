@@ -403,7 +403,7 @@ public sealed class SdsGraphClientTests
             _ => throw new InvalidOperationException(request.RequestUri.AbsoluteUri)
         });
 
-        await Assert.ThrowsAsync<SdsPublicationException>(() => Client(
+        SdsPublicationException exception = await Assert.ThrowsAsync<SdsPublicationException>(() => Client(
             graph,
             new CaptureHandler(SuccessfulDataLakeUpload)).UploadAndValidateAsync(
                 ConnectorId,
@@ -412,6 +412,10 @@ public sealed class SdsGraphClientTests
 
         Assert.DoesNotContain(graph.Requests, request =>
             request.Uri.AbsolutePath.Contains("/operations/", StringComparison.Ordinal));
+        Assert.Contains(
+            "Location=https://validation.service.test/other/operation-id",
+            SafeExceptionSummary.Create(exception),
+            StringComparison.Ordinal);
     }
 
     [Fact]

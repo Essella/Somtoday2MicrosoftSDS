@@ -296,7 +296,7 @@ internal sealed class SdsGraphClient
 
         throw new SdsPublicationException(
             "SDS validation returned an untrusted polling location",
-            safeOperation: "read SDS validation polling location: untrusted location");
+            safeOperation: $"read SDS validation polling location: untrusted location; Location={location.OriginalString}");
     }
 
     private static bool TryGetValidationOperationId(Uri location, out string operationId)
