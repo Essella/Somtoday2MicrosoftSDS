@@ -189,7 +189,7 @@ try {
             '--env', 'Somtoday__ClientId=wslc-cancellation-client',
             '--env', "Somtoday__ClientSecret=$cancellationSecretMarker",
             '--env', 'Somtoday__SchoolUUID__0=11111111-1111-1111-1111-111111111111',
-            '--env', 'SchoolDataSync__InboundFlowId=22222222-2222-2222-2222-222222222222',
+            '--env', 'SchoolDataSync__SourceName=Container test source',
             '--env', 'AZURE_TOKEN_CREDENTIALS=ManagedIdentityCredential',
             '--env', 'IDENTITY_ENDPOINT=http://192.0.2.1:10000/metadata/identity/oauth2/token',
             '--env', 'IDENTITY_HEADER=validation-only-header',

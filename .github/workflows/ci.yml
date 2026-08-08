@@ -93,7 +93,7 @@ jobs:
             --env Somtoday__ClientId=test-client \
             --env Somtoday__ClientSecret=test-secret \
             --env Somtoday__SchoolUUID__0=11111111-1111-1111-1111-111111111111 \
-            --env SchoolDataSync__InboundFlowId=22222222-2222-2222-2222-222222222222 \
+            --env SchoolDataSync__SourceName='Container test source' \
             --env AZURE_TOKEN_CREDENTIALS=ManagedIdentityCredential \
             --env IDENTITY_ENDPOINT=http://host.docker.internal:10000/metadata/identity/oauth2/token \
             --env IDENTITY_HEADER=validation-only-header \
