@@ -58,27 +58,35 @@ De Job-identiteit krijgt `IndustryData-DataConnector.Read.All` en `IndustryData-
 
 ## Uitrollen
 
+Je rolt de oplossing uit in drie stappen. Begin met de gedeelde basis. Maak daarna een syncjob voor elke SDS-connector. Geef ten slotte de Jobs toegang tot School Data Sync.
+
 ### 1. Nieuwe Container Apps Environment
 
-Gebruik dit voor een nieuwe Somtoday2MicrosoftSDS Container Apps Environment in een resourcegroep. Dit maakt de Container Apps Environment en de Log Analytics Workspace. De deployment slaat de naam van de Environment op in een tag van de resourcegroep.
+Dit is de fundering voor je syncjobs. Gebruik deze stap één keer per nieuwe Somtoday2MicrosoftSDS-omgeving in een resourcegroep. De deployment maakt een Container Apps Environment en een Log Analytics Workspace. Ook bewaart deze de naam van de Environment in de resourcegroep, zodat de volgende stap deze automatisch kan vinden.
 
 [![Deploy new environment](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FEssella%2FSomtoday2MicrosoftSDS%2Fmain%2Finfra%2Fazuredeploy.json)
 
 ### 2. Syncjob maken
 
-Gebruik hiervoor dezelfde resourcegroep als bij stap 1. De deployment leest de gekoppelde Environment automatisch uit de resourcegroep-tag. Je voert dus geen Environmentnaam of resource-ID opnieuw in.
+Herhaal deze stap voor elke SDS-connector die je maakt. Elke connector heeft een eigen syncjob nodig. Gebruik dezelfde resourcegroep als in stap 1. De deployment vindt de gekoppelde Environment automatisch; je hoeft geen naam of resource-ID opnieuw op te geven.
 
 [![Deploy sync job](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FEssella%2FSomtoday2MicrosoftSDS%2Fmain%2Finfra%2Fazuredeploy-sync-job.json)
 
 ### 3. Microsoft Graph-rechten toekennen
 
-Deze stap is nodig voordat een Job SDS kan gebruiken. Het script vindt alle Somtoday2MicrosoftSDS-Jobs in zichtbare resourcegroepen met een gekoppelde Environment en vult uitsluitend ontbrekende rechten aan.
+Deze stap geeft je syncjobs toegang tot SDS. Voer hem uit nadat je een of meer syncjobs hebt gemaakt, en opnieuw wanneer je later Jobs toevoegt. Het script zoekt alle Somtoday2MicrosoftSDS-Jobs in resourcegroepen die je kunt zien en vult alleen ontbrekende rechten aan.
+
+Lees het script voordat je het uitvoert: [assign-sync-job-roles.ps1](https://github.com/Essella/Somtoday2MicrosoftSDS/blob/main/infra/assign-sync-job-roles.ps1). Open daarna Cloud Shell in de Azure Portal en voer het volgende uit:
 
 ```powershell
 irm "https://raw.githubusercontent.com/Essella/Somtoday2MicrosoftSDS/main/infra/assign-sync-job-roles.ps1" | iex
 ```
 
-Bij de eerste uitvoering kan Microsoft Graph om toestemming voor de benodigde roltoewijzingen vragen. Je kunt deze rechten ook handmatig met Microsoft Graph-tools toekennen; zie de [deploymenthandleiding](docs/operations/DEPLOYMENT.md). De Job-template gebruikt het vaste image `ghcr.io/essella/somtoday2microsoftsds:latest`. Elke Job krijgt een deterministisch berekende UTC-minuut tussen 0 en 59, met uitvoeringen om 02:00 en 14:00 UTC.
+`irm` is de afkorting van `Invoke-RestMethod`. Deze opdracht haalt de inhoud van het script op. De pipe (`|`) geeft die inhoud door aan de volgende opdracht. `iex` is de afkorting van `Invoke-Expression` en voert het ontvangen PowerShell-script uit. Voer deze opdracht daarom alleen uit nadat je het script via de link hierboven hebt gelezen.
+
+Bij de eerste uitvoering kan Microsoft Graph om toestemming vragen. Hiervoor heb je een geschikte Microsoft Entra-beheerdersrol nodig. Het script kent alleen de drie benodigde Microsoft Graph application roles toe. Je kunt de rechten ook handmatig toekennen; zie de [deploymenthandleiding](docs/operations/DEPLOYMENT.md).
+
+De Job-template gebruikt het vaste image `ghcr.io/essella/somtoday2microsoftsds:latest`. Elke Job draait twee keer per dag, om 02:00 en 14:00 UTC, op een eigen minuut tussen 0 en 59.
 
 Microsoft Entra-replicatie kan de roltoewijzing direct na het maken van de system-assigned identity tijdelijk laten mislukken. Voer in dat geval dezelfde Job-deployment nogmaals uit.
 
