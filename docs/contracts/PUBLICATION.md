@@ -83,7 +83,7 @@ After every file returns `201 Created`, start validation with no request content
 POST https://graph.microsoft.com/beta/external/industryData/dataConnectors/{ConnectorId}/validate
 ```
 
-Require `202 Accepted` and an absolute HTTPS `Location` URL hosted by `graph.microsoft.com`. Poll that URL with authenticated `GET` requests no more frequently than every five seconds and stop after thirty minutes.
+Require `202 Accepted` and a `Location` value. An absolute value must be an HTTPS URL hosted by `graph.microsoft.com`. Resolve a relative value against `https://graph.microsoft.com/`, then require the same HTTPS host. Poll the resolved URL with authenticated `GET` requests no more frequently than every five seconds and stop after thirty minutes.
 
 Interpret validation status case-insensitively:
 
@@ -99,4 +99,4 @@ Graph calls, SAS uploads, and validation polls get at most four total HTTP attem
 
 Before a retry, use `Retry-After` as either delta-seconds or an HTTP date. Without a valid value, wait two seconds, except during validation polling. Consecutive validation polling attempts remain at least five seconds apart: use five seconds when `Retry-After` is missing or shorter, and retain a longer value. Every request and delay preserves application cancellation. The thirty-minute validation deadline also cancels polling and retry delays.
 
-Connector, upload-session, file-upload, validation-start, validation-poll, timeout, and cancellation failures produce process exit code `1`. For an HTTP failure, safe logs identify the fixed endpoint operation and numeric HTTP status. For an SAS upload failure, logs also include `x-ms-error-code` only if the response has exactly one non-empty ASCII alphanumeric value of 128 characters or less. Safe logs may contain endpoint operation names, file names, attempt counts, numeric HTTP status, connector identifiers, the validated `x-ms-error-code`, and exception types; they must not contain authorization headers, access tokens, Somtoday secrets, SAS material, response bodies, CSV values, or personal identifiers.
+Connector, upload-session, file-upload, validation-start, validation-poll, timeout, and cancellation failures produce process exit code `1`. For an HTTP failure, safe logs identify the fixed endpoint operation and numeric HTTP status. For an SAS upload failure, logs also include `x-ms-error-code` only if the response has exactly one non-empty ASCII alphanumeric value of 128 characters or less. Safe logs identify a missing or untrusted validation polling location without recording its value. Safe logs may contain endpoint operation names, file names, attempt counts, numeric HTTP status, connector identifiers, the validated `x-ms-error-code`, and exception types; they must not contain authorization headers, access tokens, Somtoday secrets, SAS material, response bodies, CSV values, personal identifiers, or resource URLs.

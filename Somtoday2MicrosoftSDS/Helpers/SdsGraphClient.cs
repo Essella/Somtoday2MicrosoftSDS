@@ -273,15 +273,25 @@ internal sealed class SdsGraphClient
         RequireStatus(response, HttpStatusCode.Accepted, "start SDS validation");
 
         Uri location = response.Headers.Location;
-        if (location is null
-            || !location.IsAbsoluteUri
-            || !string.Equals(location.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(location.Host, "graph.microsoft.com", StringComparison.OrdinalIgnoreCase))
+        if (location is null)
         {
-            throw new SdsPublicationException("SDS validation returned an invalid polling location");
+            throw new SdsPublicationException(
+                "SDS validation did not return a polling location",
+                safeOperation: "read SDS validation polling location: missing");
         }
 
-        return location;
+        Uri pollingLocation = location.IsAbsoluteUri
+            ? location
+            : new Uri(_graphBaseUri, location);
+        if (!string.Equals(pollingLocation.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(pollingLocation.Host, "graph.microsoft.com", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new SdsPublicationException(
+                "SDS validation returned an untrusted polling location",
+                safeOperation: "read SDS validation polling location: untrusted location");
+        }
+
+        return pollingLocation;
     }
 
     private async Task PollValidationAsync(Uri location, CancellationToken cancellationToken)

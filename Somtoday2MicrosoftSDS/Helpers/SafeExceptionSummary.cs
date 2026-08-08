@@ -20,6 +20,8 @@ internal static class SafeExceptionSummary
                 && !string.IsNullOrWhiteSpace(publication.SafeOperation) => FormatPublicationFailure(publication),
             SdsPublicationException publication when publication.StatusCode.HasValue =>
                 $"{publication.GetType().Name} (HTTP {(int)publication.StatusCode.Value})",
+            SdsPublicationException publication when !string.IsNullOrWhiteSpace(publication.SafeOperation) =>
+                $"{publication.GetType().Name} ({publication.SafeOperation})",
             _ => exception.GetType().Name
         };
     }

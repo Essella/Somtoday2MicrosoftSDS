@@ -336,6 +336,33 @@ public sealed class SdsGraphClientTests
     }
 
     [Fact]
+    public async Task PollsARelativeGraphValidationLocation()
+    {
+        CaptureHandler graph = new(request => request.RequestUri.AbsolutePath switch
+        {
+            var path when path.EndsWith("/getUploadSession", StringComparison.Ordinal) => Json(
+                HttpStatusCode.OK,
+                "{\"sessionUrl\":\"https://storage.test/container?sig=secret\"}"),
+            var path when path.EndsWith("/validate", StringComparison.Ordinal) => Response(
+                HttpStatusCode.Accepted,
+                "/beta/external/industryData/operations/operation-id"),
+            var path when path.EndsWith("/operations/operation-id", StringComparison.Ordinal) =>
+                Json(HttpStatusCode.OK, "{\"status\":\"succeeded\"}"),
+            _ => throw new InvalidOperationException(request.RequestUri.AbsoluteUri)
+        });
+
+        await Client(graph, new CaptureHandler(SuccessfulDataLakeUpload)).UploadAndValidateAsync(
+            ConnectorId,
+            new FileHelper().CreateEmptyV1Dataset(false),
+            CancellationToken.None);
+
+        RequestCapture poll = Assert.Single(graph.Requests, request =>
+            request.Uri.AbsolutePath.EndsWith("/operations/operation-id", StringComparison.Ordinal));
+        Assert.Equal("https://graph.microsoft.com", poll.Uri.GetLeftPart(UriPartial.Authority));
+        Assert.Equal("Bearer", poll.Authorization?.Scheme);
+    }
+
+    [Fact]
     public void SafeExceptionSummaryNeverIncludesPublicationExceptionMessage()
     {
         string summary = SafeExceptionSummary.Create(
@@ -514,7 +541,7 @@ public sealed class SdsGraphClientTests
         HttpResponseMessage response = new(status);
         if (location is not null)
         {
-            response.Headers.Location = new Uri(location);
+            response.Headers.Location = new Uri(location, UriKind.RelativeOrAbsolute);
         }
 
         return response;
