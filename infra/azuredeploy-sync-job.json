@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "10682806886220255211"
+      "templateHash": "15884139652216798020"
     }
   },
   "parameters": {
@@ -146,7 +146,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "9714586694201385077"
+              "templateHash": "3129027222617859966"
             }
           },
           "parameters": {
@@ -306,11 +306,7 @@
             "invalidSchoolUuids": "[filter(variables('schoolUuids'), lambda('uuid', not(equals(length(lambdaVariables('uuid')), 36))))]",
             "validatedSchoolUuids": "[if(and(greater(length(variables('schoolUuids')), 0), equals(length(variables('invalidSchoolUuids')), 0)), variables('schoolUuids'), fail('schoolUuidsCsv must contain one or more comma-separated UUIDs.'))]",
             "jobTags": {
-              "Somtoday2MicrosoftSDS.instance": "[variables('normalizedJobPrefix')]",
-              "Somtoday2MicrosoftSDS.somtodayEnvironment": "[parameters('somtodayEnvironment')]",
-              "Somtoday2MicrosoftSDS.sourceName": "[variables('validatedSourceName')]",
-              "Somtoday2MicrosoftSDS.schoolUuidCount": "[string(length(variables('validatedSchoolUuids')))]",
-              "Somtoday2MicrosoftSDS.cron": "[variables('cronExpression')]"
+              "Somtoday2MicrosoftSDS.instance": "[variables('normalizedJobPrefix')]"
             },
             "baseEnvironmentVariables": [
               {

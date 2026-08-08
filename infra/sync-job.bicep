@@ -90,10 +90,6 @@ var validatedSchoolUuids = length(schoolUuids) > 0 && length(invalidSchoolUuids)
 
 var jobTags = {
   'Somtoday2MicrosoftSDS.instance': normalizedJobPrefix
-  'Somtoday2MicrosoftSDS.somtodayEnvironment': somtodayEnvironment
-  'Somtoday2MicrosoftSDS.sourceName': validatedSourceName
-  'Somtoday2MicrosoftSDS.schoolUuidCount': string(length(validatedSchoolUuids))
-  'Somtoday2MicrosoftSDS.cron': cronExpression
 }
 
 var baseEnvironmentVariables = [
