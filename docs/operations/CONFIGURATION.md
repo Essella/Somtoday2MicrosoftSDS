@@ -15,7 +15,7 @@
 | `UsernameFormat__Student` | `Emailadres` |
 | `SchoolDataSync__EnableGuardianSync` | `false` |
 
-The portal Form View accepts institution UUIDs and location codes as comma-separated values. The Bicep deployment trims each value and removes empty optional location-code entries before it creates the Job environment variables.
+The Azure CLI Job template accepts institution UUIDs and location codes as comma-separated values. The Bicep deployment trims each value, removes double quotes from institution UUIDs, and removes empty optional location-code entries before it creates the Job environment variables.
 
 Do not configure a connector ID or CSV version. The application resolves the connector from the inbound flow and maps `schoolDataSyncV1` to V1 and `schoolDataSyncV2Rev1` to V2.1. One run combines all successful configured schools into one complete selected-format dataset. A failed school is omitted, but makes the final exit code `1`.
 

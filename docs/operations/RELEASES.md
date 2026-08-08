@@ -11,7 +11,7 @@ CSV bootstrap zip assets attached to the GitHub Release
 
 The current container workflow targets `linux/amd64`, requests an SBOM attestation, and creates a build-provenance attestation. A Windows application archive is not supported.
 
-Release publication is gated by the same infrastructure validation as CI. Before validation, both workflows install Bicep when required, update it to the latest version, and log the checked-out commit SHA and Bicep version. The validation compiles both Bicep entrypoints and their example parameter files, verifies that `infra/azuredeploy.json` and `infra/azuredeploy-additional-job.json` are current, and checks the tag-based Environment hand-off and fixed Job settings. A new Bicep version can change generated ARM output. In that case, regenerate and commit the ARM templates before release.
+Release publication is gated by the same infrastructure validation as CI. Before validation, both workflows install Bicep when required, update it to the latest version, and log the checked-out commit SHA and Bicep version. The validation compiles both Bicep entrypoints and their example parameter files, verifies that `infra/azuredeploy.json` is current, and checks the tag-based Environment hand-off and fixed Job settings. A new Bicep version can change generated ARM output. In that case, regenerate and commit the ARM template before release.
 
 CSV bootstrap zip assets are generated during the release workflow (not stored as tracked repository files). They exist to support one-time SDS connector bootstrap: administrators can upload a header-only CSV set that matches the chosen SDS connector variant, including environments where local script execution is restricted.
 

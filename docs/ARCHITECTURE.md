@@ -23,6 +23,6 @@
 9. Start connector validation and poll the returned Graph operation every five seconds.
 10. Exit `0` only when SDS succeeds and every configured school succeeded; otherwise exit `1`.
 
-No permanent application-owned output store exists. The only CSV persistence is the temporary SDS-owned SAS container. `infra/main.bicep` creates one Container Apps Environment, stores its name in the selected resource group's `Somtoday2MicrosoftSDS.environment` tag, and creates the first Job. `infra/additional-job.bicep` reads that tag from the same resource group and creates one additional Job. Each Job has one inbound flow and its own system-assigned identity.
+No permanent application-owned output store exists. The only CSV persistence is the temporary SDS-owned SAS container. `infra/main.bicep` creates one Container Apps Environment, its Log Analytics Workspace, and the selected resource group's `Somtoday2MicrosoftSDS.environment` tag. `infra/deploy-sync-job.bicep` reads that tag from the same resource group and creates one Job. Each Job has one inbound flow and its own system-assigned identity.
 
 Detailed data and failure rules are authoritative in the [export](contracts/EXPORT.md) and [publication](contracts/PUBLICATION.md) contracts.

@@ -1,4 +1,4 @@
-using './additional-job.bicep'
+using './deploy-sync-job.bicep'
 
 param jobPrefix = 'somtodaysds-second'
 param schoolUuidsCsv = '44444444-4444-4444-4444-444444444444'

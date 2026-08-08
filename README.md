@@ -49,28 +49,30 @@ Kies precies de set die past bij de connector die je wilt aanmaken en upload die
 - Somtoday Connect-client-ID, clientsecret en minstens één instellings-UUID.
 - Een bestaande SDS-inbound flow met een Azure Data Lake-connector voor V1 of V2.1.
 - Een Azure-abonnement en rechten om resources en roltoewijzingen te maken.
-- Voor deployment via Bicep: Microsoft Entra-rechten `Application.Read.All` en `AppRoleAssignment.ReadWrite.All` met de benodigde tenanttoestemming.
+- Voor het aanmaken van een syncjob via Azure CLI: Microsoft Entra-rechten `Application.Read.All` en `AppRoleAssignment.ReadWrite.All` met de benodigde tenanttoestemming.
 - Voor lokale ontwikkeling: .NET 10 en een `DefaultAzureCredential`-identiteit met SDS-toegang.
 
 De Job-identiteit krijgt `IndustryData-InboundFlow.ReadWrite.All` en `IndustryData-DataConnector.Upload`, gelijk aan Microsofts Power Automate-route, plus `IndustryData.ReadBasic.All` voor het pollen van de validatieoperatie. De runtime gebruikt Microsoft Graph `/beta`; controleer wijzigingen in deze API vóór productie-upgrades.
 
 ## Uitrollen
 
-### Nieuwe installatie
+### Nieuwe Container Apps Environment
 
-Gebruik dit voor de eerste Somtoday2MicrosoftSDS-sync in een resourcegroep. Dit maakt de Container Apps Environment, de Log Analytics Workspace en de eerste syncjob. De deployment slaat de naam van de Environment op in een tag van de resourcegroep.
+Gebruik dit voor een nieuwe Somtoday2MicrosoftSDS Container Apps Environment in een resourcegroep. Dit maakt de Container Apps Environment en de Log Analytics Workspace. De deployment slaat de naam van de Environment op in een tag van de resourcegroep.
 
-[![Deploy new environment + first sync job](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FEssella%2FSomtoday2MicrosoftSDS%2Fmain%2Finfra%2Fazuredeploy.json)
+[![Deploy new environment](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FEssella%2FSomtoday2MicrosoftSDS%2Fmain%2Finfra%2Fazuredeploy.json)
 
-### Extra syncjob
+### Syncjob maken
 
-Gebruik dit wanneer de gekozen resourcegroep al een gekoppelde Somtoday2MicrosoftSDS Container Apps Environment heeft. De deployment leest de Environmentnaam automatisch uit de resourcegroep-tag en maakt alleen een extra syncjob. Gebruik dus dezelfde resourcegroep als bij de eerste deployment; je voert geen Environmentnaam of resource-ID opnieuw in.
+Maak iedere syncjob daarna met het interactieve Cloud Shell-script. Het toont de resourcegroepen met een gekoppelde Somtoday2MicrosoftSDS Environment, controleert de gekozen Environment en vraagt daarna de Job-instellingen. Je voert geen Environmentnaam of resource-ID opnieuw in.
 
-[![Add another sync job](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FEssella%2FSomtoday2MicrosoftSDS%2Fmain%2Finfra%2Fazuredeploy-additional-job.json)
+```powershell
+irm "https://raw.githubusercontent.com/Essella/Somtoday2MicrosoftSDS/main/infra/deploy-sync-job.ps1" | iex
+```
 
-Gebruik voor lokale Azure CLI-deployments [main.example.bicepparam](infra/main.example.bicepparam) voor de eerste installatie en [additional-job.example.bicepparam](infra/additional-job.example.bicepparam) voor een extra syncjob. De templates gebruiken het vaste image `ghcr.io/essella/somtoday2microsoftsds:latest`. Elke Job krijgt een deterministisch berekende UTC-minuut tussen 0 en 59, met uitvoeringen om 02:00 en 14:00 UTC.
+Herhaal deze opdracht voor iedere extra syncjob. De Job-template gebruikt het vaste image `ghcr.io/essella/somtoday2microsoftsds:latest`. Elke Job krijgt een deterministisch berekende UTC-minuut tussen 0 en 59, met uitvoeringen om 02:00 en 14:00 UTC.
 
-Microsoft Entra-replicatie kan de eerste roltoewijzing direct na het maken van de system-assigned identity tijdelijk laten mislukken. Voer in dat geval dezelfde deployment nogmaals uit.
+Microsoft Entra-replicatie kan de roltoewijzing direct na het maken van de system-assigned identity tijdelijk laten mislukken. Voer in dat geval dezelfde Job-deployment nogmaals uit.
 
 ## Configuratie en export
 

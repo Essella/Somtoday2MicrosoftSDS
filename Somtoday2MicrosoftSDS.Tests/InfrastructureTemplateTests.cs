@@ -6,27 +6,36 @@ namespace Somtoday2MicrosoftSDS.Tests;
 public sealed class InfrastructureTemplateTests
 {
     [Fact]
-    public void BicepUsesTaggedEnvironmentAndOneSystemIdentityJob()
+    public void EnvironmentTemplateCreatesOnlyAzureEnvironmentResources()
     {
-        string root = FindRepositoryRoot();
-        string main = File.ReadAllText(Path.Combine(root, "infra", "main.bicep"));
-        string additionalJob = File.ReadAllText(Path.Combine(root, "infra", "additional-job.bicep"));
-        string job = File.ReadAllText(Path.Combine(root, "infra", "job.bicep"));
+        string main = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "infra", "main.bicep"));
 
         Assert.Contains("param environmentName string", main, StringComparison.Ordinal);
+        Assert.Contains("param logAnalyticsName string", main, StringComparison.Ordinal);
         Assert.Contains("resource installationTag 'Microsoft.Resources/tags", main, StringComparison.Ordinal);
         Assert.Contains("Somtoday2MicrosoftSDS.environment", main, StringComparison.Ordinal);
-        Assert.Contains("resourceGroup().tags", additionalJob, StringComparison.Ordinal);
-        Assert.DoesNotContain("environmentMode", main + additionalJob, StringComparison.Ordinal);
-        Assert.DoesNotContain("existingContainerAppsEnvironmentResourceId", main + additionalJob, StringComparison.Ordinal);
-        Assert.Equal(1, Count(job, "resource job 'Microsoft.App/jobs"));
-        Assert.Contains("type: 'SystemAssigned'", job, StringComparison.Ordinal);
-        Assert.DoesNotContain("UserAssigned", main + additionalJob + job, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Microsoft.Storage/", main + additionalJob + job, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("module ", main, StringComparison.Ordinal);
+        Assert.DoesNotContain("Microsoft.Graph/", main, StringComparison.Ordinal);
+        Assert.DoesNotContain("somtodayClientSecret", main, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void SharedSyncJobAssignsOnlyRequiredGraphRolesAndNormalizesLocationCodes()
+    public void DeploySyncJobUsesTaggedEnvironmentAndOneSystemIdentityJob()
+    {
+        string root = FindRepositoryRoot();
+        string deploySyncJob = File.ReadAllText(Path.Combine(root, "infra", "deploy-sync-job.bicep"));
+        string job = File.ReadAllText(Path.Combine(root, "infra", "job.bicep"));
+
+        Assert.Contains("resourceGroup().tags", deploySyncJob, StringComparison.Ordinal);
+        Assert.Contains("module syncJob './sync-job.bicep'", deploySyncJob, StringComparison.Ordinal);
+        Assert.Equal(1, Count(job, "resource job 'Microsoft.App/jobs"));
+        Assert.Contains("type: 'SystemAssigned'", job, StringComparison.Ordinal);
+        Assert.DoesNotContain("UserAssigned", deploySyncJob + job, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Microsoft.Storage/", deploySyncJob + job, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SharedSyncJobAssignsOnlyRequiredGraphRolesAndNormalizesInputs()
     {
         string syncJob = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "infra", "sync-job.bicep"));
 
@@ -34,6 +43,7 @@ public sealed class InfrastructureTemplateTests
         Assert.Equal(1, Count(syncJob, "'IndustryData-DataConnector.Upload'"));
         Assert.Equal(1, Count(syncJob, "'IndustryData.ReadBasic.All'"));
         Assert.DoesNotContain("appRoleId: '", syncJob, StringComparison.Ordinal);
+        Assert.Contains("replace(value, '\"', '')", syncJob, StringComparison.Ordinal);
         Assert.Contains("filter(normalizedIncludedLocationCodes", syncJob, StringComparison.Ordinal);
         Assert.Contains("filter(normalizedExcludedLocationCodes", syncJob, StringComparison.Ordinal);
         Assert.Contains("var cronMinute =", syncJob, StringComparison.Ordinal);
@@ -41,44 +51,47 @@ public sealed class InfrastructureTemplateTests
     }
 
     [Fact]
-    public void GeneratedArmTemplatesExposeTheNewDeploymentContracts()
+    public void GeneratedEnvironmentArmTemplateExposesOnlyEnvironmentParameters()
     {
-        string root = FindRepositoryRoot();
-        using JsonDocument mainDocument = JsonDocument.Parse(
-            File.ReadAllText(Path.Combine(root, "infra", "azuredeploy.json")));
-        using JsonDocument additionalJobDocument = JsonDocument.Parse(
-            File.ReadAllText(Path.Combine(root, "infra", "azuredeploy-additional-job.json")));
+        using JsonDocument document = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(FindRepositoryRoot(), "infra", "azuredeploy.json")));
+        JsonElement parameters = document.RootElement.GetProperty("parameters");
 
-        JsonElement mainParameters = mainDocument.RootElement.GetProperty("parameters");
-        JsonElement additionalJobParameters = additionalJobDocument.RootElement.GetProperty("parameters");
-
-        Assert.Equal("securestring", mainParameters.GetProperty("somtodayClientSecret").GetProperty("type").GetString());
-        Assert.True(mainParameters.TryGetProperty("environmentName", out _));
-        Assert.True(mainParameters.TryGetProperty("jobPrefix", out _));
-        Assert.True(mainParameters.TryGetProperty("schoolUuidsCsv", out _));
-        Assert.False(mainParameters.TryGetProperty("environmentMode", out _));
-        Assert.False(mainParameters.TryGetProperty("existingContainerAppsEnvironmentResourceId", out _));
-        Assert.False(mainParameters.TryGetProperty("cronExpression", out _));
-
-        Assert.Equal("securestring", additionalJobParameters.GetProperty("somtodayClientSecret").GetProperty("type").GetString());
-        Assert.True(additionalJobParameters.TryGetProperty("jobPrefix", out _));
-        Assert.True(additionalJobParameters.TryGetProperty("schoolUuidsCsv", out _));
-        Assert.False(additionalJobParameters.TryGetProperty("environmentName", out _));
-        Assert.False(additionalJobParameters.TryGetProperty("environmentMode", out _));
+        Assert.Equal(2, parameters.EnumerateObject().Count());
+        Assert.True(parameters.TryGetProperty("environmentName", out _));
+        Assert.True(parameters.TryGetProperty("logAnalyticsName", out _));
+        Assert.False(parameters.TryGetProperty("somtodayClientSecret", out _));
+        Assert.False(parameters.TryGetProperty("jobPrefix", out _));
+        Assert.False(parameters.TryGetProperty("schoolUuidsCsv", out _));
+        Assert.False(parameters.TryGetProperty("environmentMode", out _));
     }
 
     [Fact]
-    public void InfrastructureUsesTheGraphExtensionAndSeparateAdditionalJobEntrypoint()
+    public void InfrastructureKeepsTheGraphExtensionForTheCliJobEntrypoint()
     {
         string root = FindRepositoryRoot();
         string configuration = File.ReadAllText(Path.Combine(root, "infra", "bicepconfig.json"));
-        string additionalJobExample = File.ReadAllText(Path.Combine(root, "infra", "additional-job.example.bicepparam"));
+        string jobExample = File.ReadAllText(Path.Combine(root, "infra", "deploy-sync-job.example.bicepparam"));
 
         Assert.Contains("microsoftGraphV1", configuration, StringComparison.Ordinal);
-        Assert.Contains("using './additional-job.bicep'", additionalJobExample, StringComparison.Ordinal);
-        Assert.True(File.Exists(Path.Combine(root, "infra", "additional-job.bicep")));
-        Assert.True(File.Exists(Path.Combine(root, "infra", "azuredeploy-additional-job.json")));
+        Assert.Contains("using './deploy-sync-job.bicep'", jobExample, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(root, "infra", "deploy-sync-job.bicep")));
+        Assert.False(File.Exists(Path.Combine(root, "infra", "additional-job.bicep")));
+        Assert.False(File.Exists(Path.Combine(root, "infra", "azuredeploy-additional-job.json")));
         Assert.False(File.Exists(Path.Combine(root, "infra", "uiFormDefinition.json")));
+    }
+
+    [Fact]
+    public void CloudShellJobScriptSelectsAndVerifiesTaggedEnvironments()
+    {
+        string script = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "infra", "deploy-sync-job.ps1"));
+
+        Assert.Contains("Somtoday2MicrosoftSDS.environment", script, StringComparison.Ordinal);
+        Assert.Contains("'group', 'list'", script, StringComparison.Ordinal);
+        Assert.Contains("'containerapp', 'env', 'show'", script, StringComparison.Ordinal);
+        Assert.Contains("Read-Host 'Somtoday client secret' -AsSecureString", script, StringComparison.Ordinal);
+        Assert.Contains("readEnvironmentVariable('SOMTODAY_CLIENT_SECRET')", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Write-Host $env:SOMTODAY_CLIENT_SECRET", script, StringComparison.Ordinal);
     }
 
     private static int Count(string text, string value)

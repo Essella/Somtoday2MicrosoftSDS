@@ -79,7 +79,7 @@ var cronLow = hexValues[substring(cronHash, 1, 1)]
 var cronMinute = ((cronHigh * 16) + cronLow) % 60
 var cronExpression = '${cronMinute} 2,14 * * *'
 
-var schoolUuids = [for value in split(schoolUuidsCsv, ','): trim(value)]
+var schoolUuids = [for value in split(schoolUuidsCsv, ','): trim(replace(value, '"', ''))]
 var normalizedIncludedLocationCodes = [for value in split(includedLocationCodesCsv, ','): trim(value)]
 var normalizedExcludedLocationCodes = [for value in split(excludedLocationCodesCsv, ','): trim(value)]
 var includedLocationCodes = filter(normalizedIncludedLocationCodes, locationCode => !empty(locationCode))

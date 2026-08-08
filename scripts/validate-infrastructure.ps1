@@ -103,26 +103,36 @@ function Get-CanonicalJson {
     return ConvertTo-Json -InputObject $canonicalDocument -Depth 100 -Compress
 }
 
-function Assert-Template {
+function Assert-EnvironmentTemplate {
     param(
         [Parameter(Mandatory)]
         [pscustomobject]$Template,
-        [Parameter(Mandatory)]
-        [string[]]$RequiredParameterNames,
-        [Parameter(Mandatory)]
-        [string[]]$ForbiddenParameterNames,
         [Parameter(Mandatory)]
         [string]$TemplateName
     )
 
     $parameterNames = @($Template.parameters.PSObject.Properties.Name)
-    Assert-Condition -Condition ($Template.parameters.somtodayClientSecret.type -ieq 'secureString') -Message "$TemplateName must compile somtodayClientSecret as a secureString."
-    Assert-Condition -Condition (@($RequiredParameterNames | Where-Object { $_ -notin $parameterNames }).Count -eq 0) -Message "$TemplateName is missing required deployment parameters."
-    Assert-Condition -Condition (@($ForbiddenParameterNames | Where-Object { $_ -in $parameterNames }).Count -eq 0) -Message "$TemplateName still exposes a removed deployment parameter."
-    Assert-Condition -Condition ('cpu' -notin $parameterNames -and 'memory' -notin $parameterNames) -Message "$TemplateName must keep CPU and memory as implementation details."
-    Assert-Condition -Condition (@($Template.resources | Where-Object type -EQ 'Microsoft.Resources/deployments').Count -gt 0) -Message "$TemplateName does not contain the Container Apps Job deployment module."
+    Assert-Condition -Condition (@(Compare-Object -ReferenceObject @('environmentName', 'logAnalyticsName') -DifferenceObject $parameterNames).Count -eq 0) -Message "$TemplateName must expose only environmentName and logAnalyticsName."
+    Assert-Condition -Condition (@($Template.resources | Where-Object type -EQ 'Microsoft.App/managedEnvironments').Count -eq 1) -Message "$TemplateName must create one Container Apps Environment."
+    Assert-Condition -Condition (@($Template.resources | Where-Object type -EQ 'Microsoft.OperationalInsights/workspaces').Count -eq 1) -Message "$TemplateName must create one Log Analytics Workspace."
+    Assert-Condition -Condition (@($Template.resources | Where-Object type -EQ 'Microsoft.Resources/tags').Count -eq 1) -Message "$TemplateName must store the Environment tag."
+    Assert-Condition -Condition (@($Template.resources | Where-Object type -EQ 'Microsoft.Resources/deployments').Count -eq 0) -Message "$TemplateName must not deploy a sync Job."
+    Assert-Condition -Condition (@($Template.resources | Where-Object type -Like 'Microsoft.Graph/*').Count -eq 0) -Message "$TemplateName must not deploy Microsoft Graph resources."
     Assert-Condition -Condition (@($Template.resources | Where-Object type -Like 'Microsoft.Storage/*').Count -eq 0) -Message "$TemplateName must not create Azure Storage resources."
-    Assert-Condition -Condition (@($Template.resources | Where-Object { $_.PSObject.Properties['identity'] -and $_.identity.type -eq 'UserAssigned' }).Count -eq 0) -Message "$TemplateName must not create a user-assigned identity."
+}
+
+function Assert-JobTemplate {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Template
+    )
+
+    $parameterNames = @($Template.parameters.PSObject.Properties.Name)
+    $forbiddenParameterNames = @('environmentName', 'logAnalyticsName', 'environmentMode', 'existingContainerAppsEnvironmentResourceId', 'containerAppsEnvironmentName', 'imageReference', 'cronExpression', 'replicaTimeoutSeconds', 'replicaRetryLimit')
+    Assert-Condition -Condition ($Template.parameters.somtodayClientSecret.type -ieq 'secureString') -Message 'infra/deploy-sync-job.bicep must compile somtodayClientSecret as a secureString.'
+    Assert-Condition -Condition (@(@('jobPrefix', 'schoolUuidsCsv', 'inboundFlowId', 'somtodayClientId', 'somtodayClientSecret') | Where-Object { $_ -notin $parameterNames }).Count -eq 0) -Message 'infra/deploy-sync-job.bicep is missing required Job parameters.'
+    Assert-Condition -Condition (@($forbiddenParameterNames | Where-Object { $_ -in $parameterNames }).Count -eq 0) -Message 'infra/deploy-sync-job.bicep exposes an unsupported parameter.'
+    Assert-Condition -Condition (@($Template.resources | Where-Object type -EQ 'Microsoft.Resources/deployments').Count -gt 0) -Message 'infra/deploy-sync-job.bicep must contain the Container Apps Job deployment module.'
 }
 
 New-Item -ItemType Directory -Path $temporaryDirectory | Out-Null
@@ -130,46 +140,45 @@ $previousClientSecret = $env:SOMTODAY_CLIENT_SECRET
 
 try {
     $mainTemplatePath = Join-Path $temporaryDirectory 'main.json'
-    $additionalJobTemplatePath = Join-Path $temporaryDirectory 'additional-job.json'
+    $deploySyncJobTemplatePath = Join-Path $temporaryDirectory 'deploy-sync-job.json'
     $mainParametersPath = Join-Path $temporaryDirectory 'main.parameters.json'
-    $additionalJobParametersPath = Join-Path $temporaryDirectory 'additional-job.parameters.json'
+    $deploySyncJobParametersPath = Join-Path $temporaryDirectory 'deploy-sync-job.parameters.json'
 
     Write-Host 'Compiling Bicep templates and example parameter files.'
     if ($StandaloneBicep) {
         Invoke-Bicep -Arguments @('build', (Join-Path $infraRoot 'main.bicep'), '--outfile', $mainTemplatePath)
-        Invoke-Bicep -Arguments @('build', (Join-Path $infraRoot 'additional-job.bicep'), '--outfile', $additionalJobTemplatePath)
+        Invoke-Bicep -Arguments @('build', (Join-Path $infraRoot 'deploy-sync-job.bicep'), '--outfile', $deploySyncJobTemplatePath)
     }
     else {
         Invoke-Bicep -Arguments @('build', '--file', (Join-Path $infraRoot 'main.bicep'), '--outfile', $mainTemplatePath)
-        Invoke-Bicep -Arguments @('build', '--file', (Join-Path $infraRoot 'additional-job.bicep'), '--outfile', $additionalJobTemplatePath)
+        Invoke-Bicep -Arguments @('build', '--file', (Join-Path $infraRoot 'deploy-sync-job.bicep'), '--outfile', $deploySyncJobTemplatePath)
     }
 
     $env:SOMTODAY_CLIENT_SECRET = 'validation-only-value'
     if ($StandaloneBicep) {
         Invoke-Bicep -Arguments @('build-params', (Join-Path $infraRoot 'main.example.bicepparam'), '--outfile', $mainParametersPath)
-        Invoke-Bicep -Arguments @('build-params', (Join-Path $infraRoot 'additional-job.example.bicepparam'), '--outfile', $additionalJobParametersPath)
+        Invoke-Bicep -Arguments @('build-params', (Join-Path $infraRoot 'deploy-sync-job.example.bicepparam'), '--outfile', $deploySyncJobParametersPath)
     }
     else {
         Invoke-Bicep -Arguments @('build-params', '--file', (Join-Path $infraRoot 'main.example.bicepparam'), '--outfile', $mainParametersPath)
-        Invoke-Bicep -Arguments @('build-params', '--file', (Join-Path $infraRoot 'additional-job.example.bicepparam'), '--outfile', $additionalJobParametersPath)
+        Invoke-Bicep -Arguments @('build-params', '--file', (Join-Path $infraRoot 'deploy-sync-job.example.bicepparam'), '--outfile', $deploySyncJobParametersPath)
     }
 
     $mainTemplate = Get-Content -LiteralPath $mainTemplatePath -Raw | ConvertFrom-Json -Depth 100
-    $additionalJobTemplate = Get-Content -LiteralPath $additionalJobTemplatePath -Raw | ConvertFrom-Json -Depth 100
-    $removedParameters = @('environmentMode', 'existingContainerAppsEnvironmentResourceId', 'containerAppsEnvironmentName', 'imageReference', 'cronExpression', 'replicaTimeoutSeconds', 'replicaRetryLimit')
+    $deploySyncJobTemplate = Get-Content -LiteralPath $deploySyncJobTemplatePath -Raw | ConvertFrom-Json -Depth 100
 
-    Assert-Template -Template $mainTemplate -TemplateName 'infra/main.bicep' -RequiredParameterNames @('environmentName', 'jobPrefix', 'schoolUuidsCsv', 'inboundFlowId', 'somtodayClientId', 'somtodayClientSecret') -ForbiddenParameterNames $removedParameters
-    Assert-Template -Template $additionalJobTemplate -TemplateName 'infra/additional-job.bicep' -RequiredParameterNames @('jobPrefix', 'schoolUuidsCsv', 'inboundFlowId', 'somtodayClientId', 'somtodayClientSecret') -ForbiddenParameterNames ($removedParameters + 'environmentName')
+    Assert-EnvironmentTemplate -Template $mainTemplate -TemplateName 'infra/main.bicep'
+    Assert-JobTemplate -Template $deploySyncJobTemplate
 
     $mainBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'main.bicep') -Raw
-    $additionalJobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'additional-job.bicep') -Raw
+    $deploySyncJobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'deploy-sync-job.bicep') -Raw
     $syncJobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'sync-job.bicep') -Raw
     $jobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'job.bicep') -Raw
     $bicepConfiguration = Get-Content -LiteralPath (Join-Path $infraRoot 'bicepconfig.json') -Raw | ConvertFrom-Json
 
     Assert-Condition -Condition ($bicepConfiguration.extensions.PSObject.Properties.Name -contains 'microsoftGraphV1') -Message 'infra/bicepconfig.json must configure the microsoftGraphV1 extension.'
     Assert-Condition -Condition ($mainBicep.Contains("resource installationTag 'Microsoft.Resources/tags")) -Message 'infra/main.bicep must store the Environment name in the resource-group tag.'
-    Assert-Condition -Condition ($additionalJobBicep.Contains('resourceGroup().tags')) -Message 'infra/additional-job.bicep must read the Environment name from the resource-group tag.'
+    Assert-Condition -Condition ($deploySyncJobBicep.Contains('resourceGroup().tags')) -Message 'infra/deploy-sync-job.bicep must read the Environment name from the resource-group tag.'
     Assert-Condition -Condition ($syncJobBicep.Contains("var imageReference = 'ghcr.io/essella/somtoday2microsoftsds:latest'")) -Message 'infra/sync-job.bicep must use the fixed production image.'
     Assert-Condition -Condition ($syncJobBicep.Contains('var cronMinute =')) -Message 'infra/sync-job.bicep must calculate a deterministic cron minute.'
     Assert-Condition -Condition ($syncJobBicep.Contains('filter(normalizedIncludedLocationCodes')) -Message 'infra/sync-job.bicep must remove empty included location-code values.'
@@ -182,7 +191,6 @@ try {
 
     Write-Host 'Comparing compiled templates with the tracked ARM templates.'
     Assert-Condition -Condition ((Get-CanonicalJson -Path $mainTemplatePath) -ceq (Get-CanonicalJson -Path (Join-Path $infraRoot 'azuredeploy.json'))) -Message 'infra/azuredeploy.json is stale. Compile infra/main.bicep and commit the generated ARM template.'
-    Assert-Condition -Condition ((Get-CanonicalJson -Path $additionalJobTemplatePath) -ceq (Get-CanonicalJson -Path (Join-Path $infraRoot 'azuredeploy-additional-job.json'))) -Message 'infra/azuredeploy-additional-job.json is stale. Compile infra/additional-job.bicep and commit the generated ARM template.'
 
     Write-Host 'Infrastructure validation succeeded.'
 }

@@ -47,14 +47,14 @@ var storedEnvironmentName = contains(resourceGroupTags, environmentTagName)
   : ''
 var validatedEnvironmentName = !empty(storedEnvironmentName)
   ? storedEnvironmentName
-  : fail('Deze resource group bevat geen Somtoday2MicrosoftSDS.environment-tag. Gebruik eerst de knop voor een nieuwe omgeving, of selecteer de juiste resource group.')
+  : fail('Deze resource group bevat geen Somtoday2MicrosoftSDS.environment-tag. Maak eerst de Environment met main.bicep.')
 
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: validatedEnvironmentName
 }
 
-module extraSyncJob './sync-job.bicep' = {
-  name: 'additional-sync-job'
+module syncJob './sync-job.bicep' = {
+  name: 'deploy-sync-job'
   params: {
     jobPrefix: jobPrefix
     environmentId: environment.id
@@ -72,6 +72,6 @@ module extraSyncJob './sync-job.bicep' = {
   }
 }
 
-output deployedJobName string = extraSyncJob.outputs.deployedJobName
+output deployedJobName string = syncJob.outputs.deployedJobName
 output containerAppsEnvironmentName string = environment.name
-output generatedCronExpression string = extraSyncJob.outputs.cronExpression
+output generatedCronExpression string = syncJob.outputs.cronExpression
