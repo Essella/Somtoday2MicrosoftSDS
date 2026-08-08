@@ -11,7 +11,7 @@ CSV bootstrap zip assets attached to the GitHub Release
 
 The current container workflow targets `linux/amd64`, requests an SBOM attestation, and creates a build-provenance attestation. A Windows application archive is not supported.
 
-Release publication is gated by the same infrastructure validation as CI. The validation compiles Bicep and the example parameter files, verifies that `infra/azuredeploy.json` is current, validates `infra/uiFormDefinition.json` against the versioned Azure Form View schema, and requires the form outputs to match the compiled ARM parameters exactly.
+Release publication is gated by the same infrastructure validation as CI. The validation compiles both Bicep entrypoints and their example parameter files, verifies that `infra/azuredeploy.json` and `infra/azuredeploy-additional-job.json` are current, and checks the tag-based Environment hand-off and fixed Job settings.
 
 CSV bootstrap zip assets are generated during the release workflow (not stored as tracked repository files). They exist to support one-time SDS connector bootstrap: administrators can upload a header-only CSV set that matches the chosen SDS connector variant, including environments where local script execution is restricted.
 

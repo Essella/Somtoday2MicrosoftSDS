@@ -1,8 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$BicepExecutable = 'az',
-    [switch]$StandaloneBicep,
-    [string]$FormSchemaUri = 'https://schema.management.azure.com/schemas/2021-09-09/uiFormDefinition.schema.json'
+    [switch]$StandaloneBicep
 )
 
 Set-StrictMode -Version Latest
@@ -104,21 +103,45 @@ function Get-CanonicalJson {
     return ConvertTo-Json -InputObject $canonicalDocument -Depth 100 -Compress
 }
 
+function Assert-Template {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Template,
+        [Parameter(Mandatory)]
+        [string[]]$RequiredParameterNames,
+        [Parameter(Mandatory)]
+        [string[]]$ForbiddenParameterNames,
+        [Parameter(Mandatory)]
+        [string]$TemplateName
+    )
+
+    $parameterNames = @($Template.parameters.PSObject.Properties.Name)
+    Assert-Condition -Condition ($Template.parameters.somtodayClientSecret.type -ieq 'secureString') -Message "$TemplateName must compile somtodayClientSecret as a secureString."
+    Assert-Condition -Condition (@($RequiredParameterNames | Where-Object { $_ -notin $parameterNames }).Count -eq 0) -Message "$TemplateName is missing required deployment parameters."
+    Assert-Condition -Condition (@($ForbiddenParameterNames | Where-Object { $_ -in $parameterNames }).Count -eq 0) -Message "$TemplateName still exposes a removed deployment parameter."
+    Assert-Condition -Condition ('cpu' -notin $parameterNames -and 'memory' -notin $parameterNames) -Message "$TemplateName must keep CPU and memory as implementation details."
+    Assert-Condition -Condition (@($Template.resources | Where-Object type -EQ 'Microsoft.Resources/deployments').Count -gt 0) -Message "$TemplateName does not contain the Container Apps Job deployment module."
+    Assert-Condition -Condition (@($Template.resources | Where-Object type -Like 'Microsoft.Storage/*').Count -eq 0) -Message "$TemplateName must not create Azure Storage resources."
+    Assert-Condition -Condition (@($Template.resources | Where-Object { $_.PSObject.Properties['identity'] -and $_.identity.type -eq 'UserAssigned' }).Count -eq 0) -Message "$TemplateName must not create a user-assigned identity."
+}
+
 New-Item -ItemType Directory -Path $temporaryDirectory | Out-Null
 $previousClientSecret = $env:SOMTODAY_CLIENT_SECRET
 
 try {
-    $compiledTemplatePath = Join-Path $temporaryDirectory 'main.json'
+    $mainTemplatePath = Join-Path $temporaryDirectory 'main.json'
+    $additionalJobTemplatePath = Join-Path $temporaryDirectory 'additional-job.json'
     $mainParametersPath = Join-Path $temporaryDirectory 'main.parameters.json'
     $additionalJobParametersPath = Join-Path $temporaryDirectory 'additional-job.parameters.json'
-    $formSchemaPath = Join-Path $temporaryDirectory 'uiFormDefinition.schema.json'
 
     Write-Host 'Compiling Bicep templates and example parameter files.'
     if ($StandaloneBicep) {
-        Invoke-Bicep -Arguments @('build', (Join-Path $infraRoot 'main.bicep'), '--outfile', $compiledTemplatePath)
+        Invoke-Bicep -Arguments @('build', (Join-Path $infraRoot 'main.bicep'), '--outfile', $mainTemplatePath)
+        Invoke-Bicep -Arguments @('build', (Join-Path $infraRoot 'additional-job.bicep'), '--outfile', $additionalJobTemplatePath)
     }
     else {
-        Invoke-Bicep -Arguments @('build', '--file', (Join-Path $infraRoot 'main.bicep'), '--outfile', $compiledTemplatePath)
+        Invoke-Bicep -Arguments @('build', '--file', (Join-Path $infraRoot 'main.bicep'), '--outfile', $mainTemplatePath)
+        Invoke-Bicep -Arguments @('build', '--file', (Join-Path $infraRoot 'additional-job.bicep'), '--outfile', $additionalJobTemplatePath)
     }
 
     $env:SOMTODAY_CLIENT_SECRET = 'validation-only-value'
@@ -131,60 +154,35 @@ try {
         Invoke-Bicep -Arguments @('build-params', '--file', (Join-Path $infraRoot 'additional-job.example.bicepparam'), '--outfile', $additionalJobParametersPath)
     }
 
-    $compiledTemplate = Get-Content -LiteralPath $compiledTemplatePath -Raw | ConvertFrom-Json -Depth 100
-    $compiledResources = @($compiledTemplate.resources.PSObject.Properties.Value)
-    $parameterNames = @($compiledTemplate.parameters.PSObject.Properties.Name)
-    $environmentModes = @($compiledTemplate.parameters.environmentMode.allowedValues)
+    $mainTemplate = Get-Content -LiteralPath $mainTemplatePath -Raw | ConvertFrom-Json -Depth 100
+    $additionalJobTemplate = Get-Content -LiteralPath $additionalJobTemplatePath -Raw | ConvertFrom-Json -Depth 100
+    $removedParameters = @('environmentMode', 'existingContainerAppsEnvironmentResourceId', 'containerAppsEnvironmentName', 'imageReference', 'cronExpression', 'replicaTimeoutSeconds', 'replicaRetryLimit')
 
-    Assert-Condition -Condition (@($compiledResources | Where-Object type -EQ 'Microsoft.Resources/deployments').Count -gt 0) -Message 'The compiled ARM template does not contain the Container Apps Job deployment module.'
-    Assert-Condition -Condition ($compiledTemplate.parameters.somtodayClientSecret.type -ieq 'secureString') -Message 'somtodayClientSecret must compile to an ARM secureString parameter.'
-    Assert-Condition -Condition ('cpu' -notin $parameterNames -and 'memory' -notin $parameterNames) -Message 'CPU and memory must remain fixed implementation details, not deployment parameters.'
-    Assert-Condition -Condition ($environmentModes.Count -eq 2 -and $environmentModes[0] -eq 'new' -and $environmentModes[1] -eq 'existing') -Message 'environmentMode must allow exactly new and existing.'
-    Assert-Condition -Condition ('existingContainerAppsEnvironmentResourceId' -in $parameterNames) -Message 'The existing Container Apps Environment resource ID parameter is missing.'
-    Assert-Condition -Condition (@($compiledResources | Where-Object type -Like 'Microsoft.Storage/*').Count -eq 0) -Message 'The infrastructure template must not create Azure Storage resources.'
-    Assert-Condition -Condition (@($compiledResources | Where-Object { $_.PSObject.Properties['identity'] -and $_.identity.type -eq 'UserAssigned' }).Count -eq 0) -Message 'The infrastructure template must not create a user-assigned identity.'
+    Assert-Template -Template $mainTemplate -TemplateName 'infra/main.bicep' -RequiredParameterNames @('environmentName', 'jobPrefix', 'schoolUuidsCsv', 'inboundFlowId', 'somtodayClientId', 'somtodayClientSecret') -ForbiddenParameterNames $removedParameters
+    Assert-Template -Template $additionalJobTemplate -TemplateName 'infra/additional-job.bicep' -RequiredParameterNames @('jobPrefix', 'schoolUuidsCsv', 'inboundFlowId', 'somtodayClientId', 'somtodayClientSecret') -ForbiddenParameterNames ($removedParameters + 'environmentName')
 
     $mainBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'main.bicep') -Raw
-    foreach ($requiredGraphRole in @(
-            'IndustryData-InboundFlow.ReadWrite.All',
-            'IndustryData-DataConnector.Upload',
-            'IndustryData.ReadBasic.All'
-        )) {
-        Assert-Condition -Condition ($mainBicep.Contains($requiredGraphRole)) -Message "Required Microsoft Graph role '$requiredGraphRole' is missing from infra/main.bicep."
+    $additionalJobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'additional-job.bicep') -Raw
+    $syncJobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'sync-job.bicep') -Raw
+    $jobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'job.bicep') -Raw
+    $bicepConfiguration = Get-Content -LiteralPath (Join-Path $infraRoot 'bicepconfig.json') -Raw | ConvertFrom-Json
+
+    Assert-Condition -Condition ($bicepConfiguration.extensions.PSObject.Properties.Name -contains 'microsoftGraphV1') -Message 'infra/bicepconfig.json must configure the microsoftGraphV1 extension.'
+    Assert-Condition -Condition ($mainBicep.Contains("resource installationTag 'Microsoft.Resources/tags")) -Message 'infra/main.bicep must store the Environment name in the resource-group tag.'
+    Assert-Condition -Condition ($additionalJobBicep.Contains('resourceGroup().tags')) -Message 'infra/additional-job.bicep must read the Environment name from the resource-group tag.'
+    Assert-Condition -Condition ($syncJobBicep.Contains("var imageReference = 'ghcr.io/essella/somtoday2microsoftsds:latest'")) -Message 'infra/sync-job.bicep must use the fixed production image.'
+    Assert-Condition -Condition ($syncJobBicep.Contains('var cronMinute =')) -Message 'infra/sync-job.bicep must calculate a deterministic cron minute.'
+    Assert-Condition -Condition ($syncJobBicep.Contains('filter(normalizedIncludedLocationCodes')) -Message 'infra/sync-job.bicep must remove empty included location-code values.'
+    Assert-Condition -Condition ($syncJobBicep.Contains('filter(normalizedExcludedLocationCodes')) -Message 'infra/sync-job.bicep must remove empty excluded location-code values.'
+    Assert-Condition -Condition ([regex]::Matches($jobBicep, "resource\s+job\s+'Microsoft\.App/jobs").Count -eq 1) -Message 'infra/job.bicep must contain exactly one Microsoft.App/jobs resource.'
+    Assert-Condition -Condition ($jobBicep.Contains("type: 'SystemAssigned'")) -Message 'infra/job.bicep must use a system-assigned identity.'
+    foreach ($requiredGraphRole in @('IndustryData-InboundFlow.ReadWrite.All', 'IndustryData-DataConnector.Upload', 'IndustryData.ReadBasic.All')) {
+        Assert-Condition -Condition ($syncJobBicep.Contains($requiredGraphRole)) -Message "Required Microsoft Graph role '$requiredGraphRole' is missing from infra/sync-job.bicep."
     }
 
-    $jobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'job.bicep') -Raw
-    $jobResourceCount = [regex]::Matches($jobBicep, "resource\s+job\s+'Microsoft\.App/jobs").Count
-    Assert-Condition -Condition ($jobResourceCount -eq 1) -Message 'infra/job.bicep must contain exactly one Microsoft.App/jobs resource.'
-
-    Write-Host 'Comparing the compiled template with infra/azuredeploy.json.'
-    $compiledCanonical = Get-CanonicalJson -Path $compiledTemplatePath
-    $trackedCanonical = Get-CanonicalJson -Path (Join-Path $infraRoot 'azuredeploy.json')
-    #Assert-Condition -Condition ($compiledCanonical -ceq $trackedCanonical) -Message 'infra/azuredeploy.json is stale. Compile infra/main.bicep and commit the generated ARM template.'
-
-    Write-Host 'Validating the portal form against the official Azure schema.'
-    Invoke-WebRequest -Uri $FormSchemaUri -OutFile $formSchemaPath
-    $formPath = Join-Path $infraRoot 'uiFormDefinition.json'
-    $formJson = Get-Content -LiteralPath $formPath -Raw
-    Assert-Condition -Condition ($formJson | Test-Json -SchemaFile $formSchemaPath) -Message 'infra/uiFormDefinition.json does not satisfy the official Azure Form View schema.'
-
-    $form = $formJson | ConvertFrom-Json -Depth 100
-    $formParameterNames = @($form.view.outputs.parameters.PSObject.Properties.Name | Sort-Object)
-    $compiledParameterNames = @($parameterNames | Sort-Object)
-    $parameterDifference = @(Compare-Object -ReferenceObject $compiledParameterNames -DifferenceObject $formParameterNames)
-    Assert-Condition -Condition ($parameterDifference.Count -eq 0) -Message 'The portal form outputs do not match the compiled ARM template parameters.'
-
-    $environmentStep = @($form.view.properties.steps | Where-Object name -EQ 'environment')
-    Assert-Condition -Condition ($environmentStep.Count -eq 1) -Message "The portal form must contain exactly one 'environment' step."
-    $environmentMode = @($environmentStep[0].elements | Where-Object name -EQ 'environmentMode')
-    Assert-Condition -Condition ($environmentMode.Count -eq 1 -and $environmentMode[0].defaultValue.value -eq 'existing') -Message "The portal form must default environmentMode to 'existing'."
-    $environmentSelector = @($environmentStep[0].elements | Where-Object name -EQ 'existingEnvironment')
-    Assert-Condition -Condition ($environmentSelector.Count -eq 1 -and $environmentSelector[0].type -eq 'Microsoft.Solutions.ResourceSelector' -and $environmentSelector[0].resourceType -eq 'Microsoft.App/managedEnvironments') -Message 'The portal form must select existing Microsoft.App/managedEnvironments resources natively.'
-
-    $somtodayStep = @($form.view.properties.steps | Where-Object name -EQ 'somtoday')
-    Assert-Condition -Condition ($somtodayStep.Count -eq 1) -Message "The portal form must contain exactly one 'somtoday' step."
-    $secretControl = @($somtodayStep[0].elements | Where-Object name -EQ 'somtodayClientSecret')
-    Assert-Condition -Condition ($secretControl.Count -eq 1 -and $secretControl[0].type -eq 'Microsoft.Common.PasswordBox') -Message 'The portal form must collect somtodayClientSecret with a PasswordBox.'
+    Write-Host 'Comparing compiled templates with the tracked ARM templates.'
+    Assert-Condition -Condition ((Get-CanonicalJson -Path $mainTemplatePath) -ceq (Get-CanonicalJson -Path (Join-Path $infraRoot 'azuredeploy.json'))) -Message 'infra/azuredeploy.json is stale. Compile infra/main.bicep and commit the generated ARM template.'
+    Assert-Condition -Condition ((Get-CanonicalJson -Path $additionalJobTemplatePath) -ceq (Get-CanonicalJson -Path (Join-Path $infraRoot 'azuredeploy-additional-job.json'))) -Message 'infra/azuredeploy-additional-job.json is stale. Compile infra/additional-job.bicep and commit the generated ARM template.'
 
     Write-Host 'Infrastructure validation succeeded.'
 }
@@ -200,7 +198,7 @@ finally {
     $resolvedTemporaryDirectory = [System.IO.Path]::GetFullPath($temporaryDirectory)
     $requiredPrefix = $resolvedTemporaryRoot + [System.IO.Path]::DirectorySeparatorChar
     if (-not $resolvedTemporaryDirectory.StartsWith($requiredPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing to remove unexpected temporary path '$resolvedTemporaryDirectory'."
+        throw "Refusing to remove unexpected temporary path '$temporaryDirectory'."
     }
 
     if (Test-Path -LiteralPath $resolvedTemporaryDirectory) {

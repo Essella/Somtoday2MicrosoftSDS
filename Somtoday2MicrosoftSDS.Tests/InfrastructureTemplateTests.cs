@@ -6,92 +6,79 @@ namespace Somtoday2MicrosoftSDS.Tests;
 public sealed class InfrastructureTemplateTests
 {
     [Fact]
-    public void BicepCreatesOneSystemIdentityJobAndNoStorage()
+    public void BicepUsesTaggedEnvironmentAndOneSystemIdentityJob()
     {
         string root = FindRepositoryRoot();
         string main = File.ReadAllText(Path.Combine(root, "infra", "main.bicep"));
+        string additionalJob = File.ReadAllText(Path.Combine(root, "infra", "additional-job.bicep"));
         string job = File.ReadAllText(Path.Combine(root, "infra", "job.bicep"));
 
-        Assert.Contains("param environmentMode string = 'existing'", main, StringComparison.Ordinal);
-        Assert.Contains("existingContainerAppsEnvironmentResourceId", main, StringComparison.Ordinal);
+        Assert.Contains("param environmentName string", main, StringComparison.Ordinal);
+        Assert.Contains("resource installationTag 'Microsoft.Resources/tags", main, StringComparison.Ordinal);
+        Assert.Contains("Somtoday2MicrosoftSDS.environment", main, StringComparison.Ordinal);
+        Assert.Contains("resourceGroup().tags", additionalJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("environmentMode", main + additionalJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("existingContainerAppsEnvironmentResourceId", main + additionalJob, StringComparison.Ordinal);
         Assert.Equal(1, Count(job, "resource job 'Microsoft.App/jobs"));
         Assert.Contains("type: 'SystemAssigned'", job, StringComparison.Ordinal);
-        Assert.DoesNotContain("UserAssigned", main + job, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Microsoft.Storage/", main + job, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("scheduledJob.outputs.principalId", main, StringComparison.Ordinal);
+        Assert.DoesNotContain("UserAssigned", main + additionalJob + job, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Microsoft.Storage/", main + additionalJob + job, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void BicepAssignsOnlyRequiredGraphRolesByValue()
+    public void SharedSyncJobAssignsOnlyRequiredGraphRolesAndNormalizesLocationCodes()
     {
-        string main = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "infra", "main.bicep"));
+        string syncJob = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "infra", "sync-job.bicep"));
 
-        Assert.Equal(1, Count(main, "'IndustryData-InboundFlow.ReadWrite.All'"));
-        Assert.Equal(1, Count(main, "'IndustryData-DataConnector.Upload'"));
-        Assert.Equal(1, Count(main, "'IndustryData.ReadBasic.All'"));
-        Assert.DoesNotContain("appRoleId: '", main, StringComparison.Ordinal);
+        Assert.Equal(1, Count(syncJob, "'IndustryData-InboundFlow.ReadWrite.All'"));
+        Assert.Equal(1, Count(syncJob, "'IndustryData-DataConnector.Upload'"));
+        Assert.Equal(1, Count(syncJob, "'IndustryData.ReadBasic.All'"));
+        Assert.DoesNotContain("appRoleId: '", syncJob, StringComparison.Ordinal);
+        Assert.Contains("filter(normalizedIncludedLocationCodes", syncJob, StringComparison.Ordinal);
+        Assert.Contains("filter(normalizedExcludedLocationCodes", syncJob, StringComparison.Ordinal);
+        Assert.Contains("var cronMinute =", syncJob, StringComparison.Ordinal);
+        Assert.Contains("var imageReference = 'ghcr.io/essella/somtoday2microsoftsds:latest'", syncJob, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void GeneratedArmMatchesPublicConfigurationShape()
-    {
-        string root = FindRepositoryRoot();
-        using JsonDocument document = JsonDocument.Parse(
-            File.ReadAllText(Path.Combine(root, "infra", "azuredeploy.json")));
-        JsonElement parameters = document.RootElement.GetProperty("parameters");
-
-        Assert.Equal("securestring", parameters.GetProperty("somtodayClientSecret").GetProperty("type").GetString());
-        Assert.True(parameters.TryGetProperty("inboundFlowId", out _));
-        Assert.True(parameters.TryGetProperty("schoolUuids", out _));
-        Assert.True(parameters.TryGetProperty("location", out _));
-        Assert.True(parameters.TryGetProperty("environmentMode", out _));
-        Assert.True(parameters.TryGetProperty("existingContainerAppsEnvironmentResourceId", out _));
-        Assert.False(parameters.GetProperty("schoolUuids").TryGetProperty("defaultValue", out _));
-        Assert.False(parameters.TryGetProperty("blobContainerName", out _));
-        Assert.False(parameters.TryGetProperty("outputFolder", out _));
-    }
-
-    [Fact]
-    public void PortalFormSelectsAnExistingEnvironmentAndMapsEveryTemplateParameter()
+    public void GeneratedArmTemplatesExposeTheNewDeploymentContracts()
     {
         string root = FindRepositoryRoot();
-        using JsonDocument formDocument = JsonDocument.Parse(
-            File.ReadAllText(Path.Combine(root, "infra", "uiFormDefinition.json")));
-        using JsonDocument templateDocument = JsonDocument.Parse(
+        using JsonDocument mainDocument = JsonDocument.Parse(
             File.ReadAllText(Path.Combine(root, "infra", "azuredeploy.json")));
+        using JsonDocument additionalJobDocument = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(root, "infra", "azuredeploy-additional-job.json")));
 
-        JsonElement view = formDocument.RootElement.GetProperty("view");
-        JsonElement steps = view.GetProperty("properties").GetProperty("steps");
-        JsonElement environmentStep = steps.EnumerateArray()
-            .Single(step => step.GetProperty("name").GetString() == "environment");
-        JsonElement elements = environmentStep.GetProperty("elements");
+        JsonElement mainParameters = mainDocument.RootElement.GetProperty("parameters");
+        JsonElement additionalJobParameters = additionalJobDocument.RootElement.GetProperty("parameters");
 
-        JsonElement environmentMode = elements.EnumerateArray()
-            .Single(element => element.GetProperty("name").GetString() == "environmentMode");
-        Assert.Equal("existing", environmentMode.GetProperty("defaultValue").GetProperty("value").GetString());
+        Assert.Equal("securestring", mainParameters.GetProperty("somtodayClientSecret").GetProperty("type").GetString());
+        Assert.True(mainParameters.TryGetProperty("environmentName", out _));
+        Assert.True(mainParameters.TryGetProperty("jobPrefix", out _));
+        Assert.True(mainParameters.TryGetProperty("schoolUuidsCsv", out _));
+        Assert.False(mainParameters.TryGetProperty("environmentMode", out _));
+        Assert.False(mainParameters.TryGetProperty("existingContainerAppsEnvironmentResourceId", out _));
+        Assert.False(mainParameters.TryGetProperty("cronExpression", out _));
 
-        JsonElement environmentSelector = elements.EnumerateArray()
-            .Single(element => element.GetProperty("name").GetString() == "existingEnvironment");
-        Assert.Equal("Microsoft.Solutions.ResourceSelector", environmentSelector.GetProperty("type").GetString());
-        Assert.Equal("Microsoft.App/managedEnvironments", environmentSelector.GetProperty("resourceType").GetString());
-        Assert.Contains("resourceScope.subscription.subscriptionId",
-            environmentSelector.GetProperty("scope").GetProperty("subscriptionId").GetString(),
-            StringComparison.Ordinal);
+        Assert.Equal("securestring", additionalJobParameters.GetProperty("somtodayClientSecret").GetProperty("type").GetString());
+        Assert.True(additionalJobParameters.TryGetProperty("jobPrefix", out _));
+        Assert.True(additionalJobParameters.TryGetProperty("schoolUuidsCsv", out _));
+        Assert.False(additionalJobParameters.TryGetProperty("environmentName", out _));
+        Assert.False(additionalJobParameters.TryGetProperty("environmentMode", out _));
+    }
 
-        HashSet<string> formParameters = view.GetProperty("outputs").GetProperty("parameters")
-            .EnumerateObject()
-            .Select(parameter => parameter.Name)
-            .ToHashSet(StringComparer.Ordinal);
-        HashSet<string> templateParameters = templateDocument.RootElement.GetProperty("parameters")
-            .EnumerateObject()
-            .Select(parameter => parameter.Name)
-            .ToHashSet(StringComparer.Ordinal);
+    [Fact]
+    public void InfrastructureUsesTheGraphExtensionAndSeparateAdditionalJobEntrypoint()
+    {
+        string root = FindRepositoryRoot();
+        string configuration = File.ReadAllText(Path.Combine(root, "infra", "bicepconfig.json"));
+        string additionalJobExample = File.ReadAllText(Path.Combine(root, "infra", "additional-job.example.bicepparam"));
 
-        Assert.True(
-            templateParameters.SetEquals(formParameters),
-            $"Form parameters differ from ARM parameters. Form-only: {string.Join(", ", formParameters.Except(templateParameters))}. ARM-only: {string.Join(", ", templateParameters.Except(formParameters))}.");
-        Assert.Contains("existingContainerAppsEnvironmentResourceId", formParameters);
-        Assert.Contains("somtodayClientSecret", formParameters);
+        Assert.Contains("microsoftGraphV1", configuration, StringComparison.Ordinal);
+        Assert.Contains("using './additional-job.bicep'", additionalJobExample, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(root, "infra", "additional-job.bicep")));
+        Assert.True(File.Exists(Path.Combine(root, "infra", "azuredeploy-additional-job.json")));
+        Assert.False(File.Exists(Path.Combine(root, "infra", "uiFormDefinition.json")));
     }
 
     private static int Count(string text, string value)

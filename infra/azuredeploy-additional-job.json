@@ -5,24 +5,16 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "3991854679897365668"
+      "templateHash": "752450877369517400"
     }
   },
   "parameters": {
-    "environmentName": {
-      "type": "string",
-      "minLength": 2,
-      "maxLength": 60,
-      "metadata": {
-        "description": "Volledige naam voor de gedeelde Azure Container Apps Environment."
-      }
-    },
     "jobPrefix": {
       "type": "string",
       "minLength": 1,
       "maxLength": 27,
       "metadata": {
-        "description": "Korte prefix voor de eerste Somtoday-syncjob. De uiteindelijke Job-naam wordt <prefix>-job. Maximaal 27 tekens."
+        "description": "Korte prefix voor deze extra Somtoday-syncjob. De uiteindelijke Job-naam wordt <prefix>-job. Maximaal 27 tekens."
       }
     },
     "schoolUuidsCsv": {
@@ -92,57 +84,15 @@
   },
   "variables": {
     "environmentTagName": "Somtoday2MicrosoftSDS.environment",
-    "existingResourceGroupTags": "[coalesce(resourceGroup().tags, createObject())]",
-    "alreadyInitialized": "[and(contains(variables('existingResourceGroupTags'), variables('environmentTagName')), not(empty(trim(string(variables('existingResourceGroupTags')[variables('environmentTagName')])))))]",
-    "validatedEnvironmentName": "[if(not(variables('alreadyInitialized')), toLower(trim(parameters('environmentName'))), fail('Deze resource group bevat al een Somtoday2MicrosoftSDS-environment. Gebruik de knop \"Add another sync job\" om een extra Job toe te voegen.'))]",
-    "logAnalyticsName": "[format('log-{0}', uniqueString(resourceGroup().id, variables('validatedEnvironmentName')))]"
+    "resourceGroupTags": "[coalesce(resourceGroup().tags, createObject())]",
+    "storedEnvironmentName": "[if(contains(variables('resourceGroupTags'), variables('environmentTagName')), trim(string(variables('resourceGroupTags')[variables('environmentTagName')])), '')]",
+    "validatedEnvironmentName": "[if(not(empty(variables('storedEnvironmentName'))), variables('storedEnvironmentName'), fail('Deze resource group bevat geen Somtoday2MicrosoftSDS.environment-tag. Gebruik eerst de knop voor een nieuwe omgeving, of selecteer de juiste resource group.'))]"
   },
   "resources": [
     {
-      "type": "Microsoft.OperationalInsights/workspaces",
-      "apiVersion": "2023-09-01",
-      "name": "[variables('logAnalyticsName')]",
-      "location": "[resourceGroup().location]",
-      "properties": {
-        "retentionInDays": 30,
-        "features": {
-          "enableLogAccessUsingOnlyResourcePermissions": true
-        }
-      }
-    },
-    {
-      "type": "Microsoft.App/managedEnvironments",
-      "apiVersion": "2024-03-01",
-      "name": "[variables('validatedEnvironmentName')]",
-      "location": "[resourceGroup().location]",
-      "properties": {
-        "appLogsConfiguration": {
-          "destination": "log-analytics",
-          "logAnalyticsConfiguration": {
-            "customerId": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName')), '2023-09-01').customerId]",
-            "sharedKey": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName')), '2023-09-01').primarySharedKey]"
-          }
-        }
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsName'))]"
-      ]
-    },
-    {
-      "type": "Microsoft.Resources/tags",
-      "apiVersion": "2024-11-01",
-      "name": "default",
-      "properties": {
-        "tags": "[union(variables('existingResourceGroupTags'), createObject('Somtoday2MicrosoftSDS.environment', variables('validatedEnvironmentName')))]"
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.App/managedEnvironments', variables('validatedEnvironmentName'))]"
-      ]
-    },
-    {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
-      "name": "first-sync-job",
+      "name": "additional-sync-job",
       "properties": {
         "expressionEvaluationOptions": {
           "scope": "inner"
@@ -613,16 +563,13 @@
             }
           }
         }
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.App/managedEnvironments', variables('validatedEnvironmentName'))]"
-      ]
+      }
     }
   ],
   "outputs": {
     "deployedJobName": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'first-sync-job'), '2025-04-01').outputs.deployedJobName.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'additional-sync-job'), '2025-04-01').outputs.deployedJobName.value]"
     },
     "containerAppsEnvironmentName": {
       "type": "string",
@@ -630,7 +577,7 @@
     },
     "generatedCronExpression": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'first-sync-job'), '2025-04-01').outputs.cronExpression.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'additional-sync-job'), '2025-04-01').outputs.cronExpression.value]"
     }
   }
 }

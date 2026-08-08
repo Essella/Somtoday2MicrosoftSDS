@@ -4,7 +4,7 @@ Somtoday2MicrosoftSDS is een eenmalig uitgevoerde .NET 10-batchapplicatie. Een r
 
 De SDS-connector bepaalt automatisch het formaat: `schoolDataSyncV1` geeft V1 en `schoolDataSyncV2Rev1` geeft V2.1. Er is geen instelling voor de CSV-versie en er wordt nooit in één run zowel V1 als V2.1 geüpload.
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FEssella%2FSomtoday2MicrosoftSDS%2Fmain%2Finfra%2Fazuredeploy.json)
+[![Ga direct naar Uitrollen](https://img.shields.io/badge/Ga%20direct%20naar-Uitrollen-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white)](#uitrollen)
 
 ## Werking
 
@@ -56,14 +56,19 @@ De Job-identiteit krijgt `IndustryData-InboundFlow.ReadWrite.All` en `IndustryDa
 
 ## Uitrollen
 
-`environmentMode` heeft twee keuzes:
+### Nieuwe installatie
 
-- `existing` (standaard): plaatst de Job in een bestaande ACA-omgeving via de volledige resource-ID. Die omgeving mag in een andere resourcegroep staan, maar moet in dezelfde subscription staan;
-- `new`: maakt alleen na een expliciete keuze Log Analytics en een nieuwe ACA-omgeving.
+Gebruik dit voor de eerste Somtoday2MicrosoftSDS-sync in een resourcegroep. Dit maakt de Container Apps Environment, de Log Analytics Workspace en de eerste syncjob. De deployment slaat de naam van de Environment op in een tag van de resourcegroep.
 
-De standaard stuurt op hergebruik van een bestaande omgeving om onbedoelde extra infrastructuurkosten te voorkomen. De publieke Deploy to Azure-knop gebruikt het generieke ARM-formulier; plak daar de volledige resource-ID. [uiFormDefinition.json](infra/uiFormDefinition.json) biedt via een Azure Template Spec een native resourcekiezer en toont alleen de velden voor de gekozen modus. Zie de [deploymenthandleiding](docs/operations/DEPLOYMENT.md) voor publicatie van die Template Spec.
+[![Deploy new environment + first sync job](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FEssella%2FSomtoday2MicrosoftSDS%2Fmain%2Finfra%2Fazuredeploy.json)
 
-Gebruik voor de eerste Job zonder bestaande omgeving [main.example.bicepparam](infra/main.example.bicepparam) en voor een volgende Job [additional-job.example.bicepparam](infra/additional-job.example.bicepparam). Pin productie op een releasetag of image-digest in plaats van `latest`. ACA-cronschema's zijn UTC.
+### Extra syncjob
+
+Gebruik dit wanneer de gekozen resourcegroep al een gekoppelde Somtoday2MicrosoftSDS Container Apps Environment heeft. De deployment leest de Environmentnaam automatisch uit de resourcegroep-tag en maakt alleen een extra syncjob. Gebruik dus dezelfde resourcegroep als bij de eerste deployment; je voert geen Environmentnaam of resource-ID opnieuw in.
+
+[![Add another sync job](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FEssella%2FSomtoday2MicrosoftSDS%2Fmain%2Finfra%2Fazuredeploy-additional-job.json)
+
+Gebruik voor lokale Azure CLI-deployments [main.example.bicepparam](infra/main.example.bicepparam) voor de eerste installatie en [additional-job.example.bicepparam](infra/additional-job.example.bicepparam) voor een extra syncjob. De templates gebruiken het vaste image `ghcr.io/essella/somtoday2microsoftsds:latest`. Elke Job krijgt een deterministisch berekende UTC-minuut tussen 0 en 59, met uitvoeringen om 02:00 en 14:00 UTC.
 
 Microsoft Entra-replicatie kan de eerste roltoewijzing direct na het maken van de system-assigned identity tijdelijk laten mislukken. Voer in dat geval dezelfde deployment nogmaals uit.
 

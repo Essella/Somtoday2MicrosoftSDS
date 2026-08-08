@@ -1,49 +1,22 @@
-extension microsoftGraphV1
-
 targetScope = 'resourceGroup'
 
-@description('Azure-regio voor nieuwe resources. Bij een bestaande Container Apps Environment wordt de regio van die environment gebruikt voor de Job.')
-param location string = resourceGroup().location
+@description('Volledige naam voor de gedeelde Azure Container Apps Environment.')
+@minLength(2)
+@maxLength(60)
+param environmentName string
 
-@description('ACA-omgevingsmodus. new maakt een nieuwe omgeving met Log Analytics; existing gebruikt de opgegeven bestaande omgeving.')
-@allowed([
-  'new'
-  'existing'
-])
-param environmentMode string = 'existing'
-
-@description('Korte prefix voor nieuwe resourcenamen; standaard: somtodaysds.')
-@minLength(3)
-@maxLength(20)
-param namePrefix string = 'somtodaysds'
-
-@description('Naam van de nieuwe Container Apps Environment. Alleen gebruikt bij environmentMode new.')
-param containerAppsEnvironmentName string = 'somtodaysds-env'
-
-@description('Volledige resource-ID van een bestaande Container Apps Environment in dezelfde subscription. Verplicht bij environmentMode existing.')
-param existingContainerAppsEnvironmentResourceId string = ''
-
-@description('Naam van deze Container Apps Job. Gebruik een andere naam voor iedere extra Job in dezelfde environment.')
-param jobName string = 'somtodaysds-job'
-
-@description('Containerimage uit GHCR, inclusief release-tag of digest.')
-param imageReference string = 'ghcr.io/essella/somtoday2microsoftsds:latest'
-
-@description('Cron-schema in UTC voor de Job.')
-param cronExpression string = '5 2,14 * * *'
-
-@minValue(1)
-@maxValue(3600)
-param replicaTimeoutSeconds int = 3600
-
-@minValue(0)
-param replicaRetryLimit int = 1
-
-@description('Somtoday-instellings-UUIDs die samen één volledige dataset vormen.')
+@description('Korte prefix voor de eerste Somtoday-syncjob. De uiteindelijke Job-naam wordt <prefix>-job. Maximaal 27 tekens.')
 @minLength(1)
-param schoolUuids array
+@maxLength(27)
+param jobPrefix string
+
+@description('Somtoday-instellings-UUIDs, door komma\'s gescheiden. Meerdere UUIDs vormen samen één SDS-dataset.')
+@minLength(36)
+param schoolUuidsCsv string
 
 @description('Inbound-flow-ID van Microsoft School Data Sync. Dit is niet de connector-ID.')
+@minLength(36)
+@maxLength(36)
 param inboundFlowId string
 
 @description('OAuth-client-ID van Somtoday Connect.')
@@ -57,40 +30,34 @@ param somtodayClientId string
 ])
 param somtodayEnvironment string = 'PROD'
 
-@description('OAuth-clientsecret van Somtoday Connect. Wordt opgeslagen als Job-secret.')
+@description('OAuth-clientsecret van Somtoday Connect. Wordt uitsluitend als Container Apps Job-secret opgeslagen.')
 @secure()
 @minLength(1)
 param somtodayClientSecret string
 
-param includedLocationCodes array = []
-param excludedLocationCodes array = []
+@description('Optionele opgenomen locatiecodes, door komma\'s gescheiden. Leeg betekent geen inclusiefilter.')
+param includedLocationCodesCsv string = ''
+
+@description('Optionele uitgesloten locatiecodes, door komma\'s gescheiden. Leeg betekent geen exclusiefilter.')
+param excludedLocationCodesCsv string = ''
+
 param enableGuardianSync bool = false
 param teacherUsernameFormat string = 'Emailadres'
 param studentUsernameFormat string = 'Emailadres'
 
-var normalizedPrefix = toLower(namePrefix)
-var logAnalyticsName = '${normalizedPrefix}-logs'
-var containerName = 'somtoday2microsoftsds'
-var isNewEnvironment = environmentMode == 'new'
-var existingEnvironmentId = trim(existingContainerAppsEnvironmentResourceId)
-var candidateExistingEnvironmentSegments = split(existingEnvironmentId, '/')
-var isValidExistingEnvironmentId = length(candidateExistingEnvironmentSegments) == 9 && toLower(candidateExistingEnvironmentSegments[?1] ?? '') == 'subscriptions' && toLower(candidateExistingEnvironmentSegments[?2] ?? '') == toLower(subscription().subscriptionId) && toLower(candidateExistingEnvironmentSegments[?3] ?? '') == 'resourcegroups' && !empty(candidateExistingEnvironmentSegments[?4] ?? '') && toLower(candidateExistingEnvironmentSegments[?5] ?? '') == 'providers' && toLower(candidateExistingEnvironmentSegments[?6] ?? '') == 'microsoft.app' && toLower(candidateExistingEnvironmentSegments[?7] ?? '') == 'managedenvironments' && !empty(candidateExistingEnvironmentSegments[?8] ?? '')
-var validatedExistingEnvironmentId = isNewEnvironment
-  ? ''
-  : isValidExistingEnvironmentId
-    ? existingEnvironmentId
-    : fail('existingContainerAppsEnvironmentResourceId must be a full Microsoft.App/managedEnvironments resource ID in the current subscription.')
-var existingEnvironmentSegments = split(validatedExistingEnvironmentId, '/')
-var existingEnvironmentResourceGroup = isNewEnvironment ? '' : existingEnvironmentSegments[4]
-var existingEnvironmentName = isNewEnvironment ? '' : last(existingEnvironmentSegments)
-var validatedInboundFlowId = length(inboundFlowId) == 36
-  ? inboundFlowId
-  : fail('inboundFlowId must be a UUID.')
+var environmentTagName = 'Somtoday2MicrosoftSDS.environment'
+var existingResourceGroupTags = resourceGroup().tags ?? {}
+var alreadyInitialized = contains(existingResourceGroupTags, environmentTagName) && !empty(trim(string(existingResourceGroupTags[environmentTagName])))
+var validatedEnvironmentName = !alreadyInitialized
+  ? toLower(trim(environmentName))
+  : fail('Deze resource group bevat al een Somtoday2MicrosoftSDS-environment. Gebruik de knop "Add another sync job" om een extra Job toe te voegen.')
 
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (isNewEnvironment) {
+// De Log Analytics-naam is intern en stabiel; de eindgebruiker hoeft hiervoor geen extra naam op te geven.
+var logAnalyticsName = 'log-${uniqueString(resourceGroup().id, validatedEnvironmentName)}'
+
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsName
-  location: location
-  tags: resourceGroup().tags
+  location: resourceGroup().location
   properties: {
     retentionInDays: 30
     features: {
@@ -99,141 +66,50 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if
   }
 }
 
-resource newEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = if (isNewEnvironment) {
-  name: containerAppsEnvironmentName
-  location: location
-  tags: resourceGroup().tags
+resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
+  name: validatedEnvironmentName
+  location: resourceGroup().location
   properties: {
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
-        customerId: logAnalytics!.properties.customerId
-        sharedKey: logAnalytics!.listKeys().primarySharedKey
+        customerId: logAnalytics.properties.customerId
+        sharedKey: logAnalytics.listKeys().primarySharedKey
       }
     }
   }
 }
 
-resource existingEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = if (!isNewEnvironment) {
-  scope: resourceGroup(existingEnvironmentResourceGroup)
-  name: existingEnvironmentName
+// Eén enkele tag is voldoende voor vervolgdeployments. Subscription en resource group zijn al bekend
+// uit de resource group die de gebruiker in Azure Portal selecteert.
+resource installationTag 'Microsoft.Resources/tags@2024-11-01' = {
+  name: 'default'
+  properties: {
+    tags: union(existingResourceGroupTags, {
+      'Somtoday2MicrosoftSDS.environment': environment.name
+    })
+  }
 }
 
-var effectiveEnvironmentId = isNewEnvironment ? newEnvironment!.id : existingEnvironment!.id
-var effectiveLocation = isNewEnvironment ? location : existingEnvironment!.location
-
-var baseEnvironmentVariables = [
-  {
-    name: 'DOTNET_ENVIRONMENT'
-    value: 'Production'
-  }
-  {
-    name: 'AZURE_TOKEN_CREDENTIALS'
-    value: 'ManagedIdentityCredential'
-  }
-  {
-    name: 'Somtoday__ClientId'
-    value: somtodayClientId
-  }
-  {
-    name: 'Somtoday__Environment'
-    value: somtodayEnvironment
-  }
-  {
-    name: 'SchoolDataSync__InboundFlowId'
-    value: validatedInboundFlowId
-  }
-  {
-    name: 'SchoolDataSync__EnableGuardianSync'
-    value: string(enableGuardianSync)
-  }
-  {
-    name: 'UsernameFormat__Teacher'
-    value: teacherUsernameFormat
-  }
-  {
-    name: 'UsernameFormat__Student'
-    value: studentUsernameFormat
-  }
-]
-
-var schoolEnvironmentVariables = [for (schoolUuid, index) in schoolUuids: {
-  name: 'Somtoday__SchoolUUID__${index}'
-  value: trim(string(schoolUuid))
-}]
-
-var normalizedIncludedLocationCodes = filter(includedLocationCodes, locationCode => !empty(trim(string(locationCode))))
-var normalizedExcludedLocationCodes = filter(excludedLocationCodes, locationCode => !empty(trim(string(locationCode))))
-
-var includedLocationEnvironmentVariables = [for (locationCode, index) in normalizedIncludedLocationCodes: {
-  name: 'Locations__IncludedLocationCodes__${index}'
-  value: trim(string(locationCode))
-}]
-
-var excludedLocationEnvironmentVariables = [for (locationCode, index) in normalizedExcludedLocationCodes: {
-  name: 'Locations__ExcludedLocationCodes__${index}'
-  value: trim(string(locationCode))
-}]
-
-module scheduledJob './job.bicep' = {
-  name: 'deploy-${jobName}'
+module firstSyncJob './sync-job.bicep' = {
+  name: 'first-sync-job'
   params: {
-    jobName: jobName
-    location: effectiveLocation
-    tags: resourceGroup().tags
-    environmentId: effectiveEnvironmentId
-    imageReference: imageReference
-    containerName: containerName
-    cronExpression: cronExpression
-    replicaTimeoutSeconds: replicaTimeoutSeconds
-    replicaRetryLimit: replicaRetryLimit
+    jobPrefix: jobPrefix
+    environmentId: environment.id
+    location: environment.location
+    schoolUuidsCsv: schoolUuidsCsv
+    inboundFlowId: inboundFlowId
+    somtodayClientId: somtodayClientId
+    somtodayEnvironment: somtodayEnvironment
     somtodayClientSecret: somtodayClientSecret
-    environmentVariables: concat(
-      baseEnvironmentVariables,
-      schoolEnvironmentVariables,
-      includedLocationEnvironmentVariables,
-      excludedLocationEnvironmentVariables
-    )
+    includedLocationCodesCsv: includedLocationCodesCsv
+    excludedLocationCodesCsv: excludedLocationCodesCsv
+    enableGuardianSync: enableGuardianSync
+    teacherUsernameFormat: teacherUsernameFormat
+    studentUsernameFormat: studentUsernameFormat
   }
 }
 
-resource microsoftGraph 'Microsoft.Graph/servicePrincipals@v1.0' existing = {
-  appId: '00000003-0000-0000-c000-000000000000'
-}
-
-var inboundFlowReadWriteRoles = filter(microsoftGraph.appRoles, role => role.value == 'IndustryData-InboundFlow.ReadWrite.All')
-var connectorUploadRoles = filter(microsoftGraph.appRoles, role => role.value == 'IndustryData-DataConnector.Upload')
-var operationReadRoles = filter(microsoftGraph.appRoles, role => role.value == 'IndustryData.ReadBasic.All')
-var inboundFlowReadWriteRoleId = length(inboundFlowReadWriteRoles) == 1
-  ? first(inboundFlowReadWriteRoles)!.id
-  : fail('Microsoft Graph must expose exactly one IndustryData-InboundFlow.ReadWrite.All application role.')
-var connectorUploadRoleId = length(connectorUploadRoles) == 1
-  ? first(connectorUploadRoles)!.id
-  : fail('Microsoft Graph must expose exactly one IndustryData-DataConnector.Upload application role.')
-var operationReadRoleId = length(operationReadRoles) == 1
-  ? first(operationReadRoles)!.id
-  : fail('Microsoft Graph must expose exactly one IndustryData.ReadBasic.All application role.')
-
-resource inboundFlowReadWriteRoleAssignment 'Microsoft.Graph/appRoleAssignedTo@v1.0' = {
-  appRoleId: inboundFlowReadWriteRoleId
-  principalId: scheduledJob.outputs.principalId
-  resourceId: microsoftGraph.id
-  resourceDisplayName: microsoftGraph.displayName
-}
-
-resource connectorUploadRoleAssignment 'Microsoft.Graph/appRoleAssignedTo@v1.0' = {
-  appRoleId: connectorUploadRoleId
-  principalId: scheduledJob.outputs.principalId
-  resourceId: microsoftGraph.id
-  resourceDisplayName: microsoftGraph.displayName
-}
-
-resource operationReadRoleAssignment 'Microsoft.Graph/appRoleAssignedTo@v1.0' = {
-  appRoleId: operationReadRoleId
-  principalId: scheduledJob.outputs.principalId
-  resourceId: microsoftGraph.id
-  resourceDisplayName: microsoftGraph.displayName
-}
-
-output deployedJobName string = scheduledJob.outputs.jobName
-output deployedContainerAppsEnvironmentResourceId string = effectiveEnvironmentId
+output deployedJobName string = firstSyncJob.outputs.deployedJobName
+output containerAppsEnvironmentName string = environment.name
+output generatedCronExpression string = firstSyncJob.outputs.cronExpression
