@@ -64,10 +64,26 @@ public sealed class InfrastructureTemplateTests
     }
 
     [Fact]
-    public void InfrastructureUsesThePowerShellScriptForGraphRoleAssignments()
+    public void GeneratedSyncJobArmTemplateExposesTheJobParameters()
+    {
+        using JsonDocument document = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(FindRepositoryRoot(), "infra", "azuredeploy-sync-job.json")));
+        JsonElement parameters = document.RootElement.GetProperty("parameters");
+
+        Assert.True(parameters.TryGetProperty("jobPrefix", out _));
+        Assert.True(parameters.TryGetProperty("schoolUuidsCsv", out _));
+        Assert.True(parameters.TryGetProperty("inboundFlowId", out _));
+        Assert.True(parameters.TryGetProperty("somtodayClientSecret", out JsonElement secret));
+        Assert.Equal("securestring", secret.GetProperty("type").GetString());
+        Assert.False(parameters.TryGetProperty("environmentName", out _));
+        Assert.False(parameters.TryGetProperty("containerAppsEnvironmentName", out _));
+    }
+
+    [Fact]
+    public void InfrastructureUsesTheBulkRoleAssignmentScript()
     {
         string root = FindRepositoryRoot();
-        string script = File.ReadAllText(Path.Combine(root, "infra", "deploy-sync-job.ps1"));
+        string script = File.ReadAllText(Path.Combine(root, "infra", "assign-sync-job-roles.ps1"));
         string jobExample = File.ReadAllText(Path.Combine(root, "infra", "deploy-sync-job.example.bicepparam"));
 
         Assert.Contains("Connect-MgGraph", script, StringComparison.Ordinal);
@@ -78,6 +94,8 @@ public sealed class InfrastructureTemplateTests
         Assert.Equal(1, Count(script, "'IndustryData.ReadBasic.All'"));
         Assert.Contains("using './deploy-sync-job.bicep'", jobExample, StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(root, "infra", "deploy-sync-job.bicep")));
+        Assert.True(File.Exists(Path.Combine(root, "infra", "azuredeploy-sync-job.json")));
+        Assert.False(File.Exists(Path.Combine(root, "infra", "deploy-sync-job.ps1")));
         Assert.False(File.Exists(Path.Combine(root, "infra", "bicepconfig.json")));
         Assert.False(File.Exists(Path.Combine(root, "infra", "additional-job.bicep")));
         Assert.False(File.Exists(Path.Combine(root, "infra", "azuredeploy-additional-job.json")));
@@ -85,18 +103,17 @@ public sealed class InfrastructureTemplateTests
     }
 
     [Fact]
-    public void CloudShellJobScriptSelectsAndVerifiesTaggedEnvironments()
+    public void CloudShellRoleAssignmentScriptFindsOnlyTaggedJobs()
     {
-        string script = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "infra", "deploy-sync-job.ps1"));
+        string script = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "infra", "assign-sync-job-roles.ps1"));
 
         Assert.Contains("Somtoday2MicrosoftSDS.environment", script, StringComparison.Ordinal);
+        Assert.Contains("Somtoday2MicrosoftSDS.instance", script, StringComparison.Ordinal);
         Assert.Contains("'group', 'list'", script, StringComparison.Ordinal);
-        Assert.Contains("'containerapp', 'env', 'show'", script, StringComparison.Ordinal);
-        Assert.Contains("Read-Host 'Somtoday client secret' -AsSecureString", script, StringComparison.Ordinal);
-        Assert.Contains("readEnvironmentVariable('SOMTODAY_CLIENT_SECRET')", script, StringComparison.Ordinal);
-        Assert.Contains("[AllowEmptyString()]", script, StringComparison.Ordinal);
-        Assert.Contains("Grant-JobGraphRoles", script, StringComparison.Ordinal);
+        Assert.Contains("'containerapp', 'job', 'list'", script, StringComparison.Ordinal);
+        Assert.Contains("Grant-JobGraphRoles -Jobs $jobs", script, StringComparison.Ordinal);
         Assert.DoesNotContain("Write-Host $env:SOMTODAY_CLIENT_SECRET", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Read-Host", script, StringComparison.Ordinal);
     }
 
     private static int Count(string text, string value)

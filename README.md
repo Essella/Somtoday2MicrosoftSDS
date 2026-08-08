@@ -56,21 +56,27 @@ De Job-identiteit krijgt `IndustryData-InboundFlow.ReadWrite.All` en `IndustryDa
 
 ## Uitrollen
 
-### Nieuwe Container Apps Environment
+### 1. Nieuwe Container Apps Environment
 
 Gebruik dit voor een nieuwe Somtoday2MicrosoftSDS Container Apps Environment in een resourcegroep. Dit maakt de Container Apps Environment en de Log Analytics Workspace. De deployment slaat de naam van de Environment op in een tag van de resourcegroep.
 
 [![Deploy new environment](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FEssella%2FSomtoday2MicrosoftSDS%2Fmain%2Finfra%2Fazuredeploy.json)
 
-### Syncjob maken
+### 2. Syncjob maken
 
-Maak iedere syncjob daarna met het interactieve Cloud Shell-script. Het toont de resourcegroepen met een gekoppelde Somtoday2MicrosoftSDS Environment, controleert de gekozen Environment en vraagt daarna de Job-instellingen. Je voert geen Environmentnaam of resource-ID opnieuw in. Bij de eerste uitvoering kan Microsoft Graph om toestemming voor de benodigde roltoewijzingen vragen.
+Gebruik hiervoor dezelfde resourcegroep als bij stap 1. De deployment leest de gekoppelde Environment automatisch uit de resourcegroep-tag. Je voert dus geen Environmentnaam of resource-ID opnieuw in.
+
+[![Deploy sync job](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FEssella%2FSomtoday2MicrosoftSDS%2Fmain%2Finfra%2Fazuredeploy-sync-job.json)
+
+### 3. Microsoft Graph-rechten toekennen
+
+Deze stap is nodig voordat een Job SDS kan gebruiken. Het script vindt alle Somtoday2MicrosoftSDS-Jobs in zichtbare resourcegroepen met een gekoppelde Environment en vult uitsluitend ontbrekende rechten aan.
 
 ```powershell
-irm "https://raw.githubusercontent.com/Essella/Somtoday2MicrosoftSDS/main/infra/deploy-sync-job.ps1" | iex
+irm "https://raw.githubusercontent.com/Essella/Somtoday2MicrosoftSDS/main/infra/assign-sync-job-roles.ps1" | iex
 ```
 
-Herhaal deze opdracht voor iedere extra syncjob. De Job-template gebruikt het vaste image `ghcr.io/essella/somtoday2microsoftsds:latest`. Elke Job krijgt een deterministisch berekende UTC-minuut tussen 0 en 59, met uitvoeringen om 02:00 en 14:00 UTC.
+Bij de eerste uitvoering kan Microsoft Graph om toestemming voor de benodigde roltoewijzingen vragen. Je kunt deze rechten ook handmatig met Microsoft Graph-tools toekennen; zie de [deploymenthandleiding](docs/operations/DEPLOYMENT.md). De Job-template gebruikt het vaste image `ghcr.io/essella/somtoday2microsoftsds:latest`. Elke Job krijgt een deterministisch berekende UTC-minuut tussen 0 en 59, met uitvoeringen om 02:00 en 14:00 UTC.
 
 Microsoft Entra-replicatie kan de roltoewijzing direct na het maken van de system-assigned identity tijdelijk laten mislukken. Voer in dat geval dezelfde Job-deployment nogmaals uit.
 

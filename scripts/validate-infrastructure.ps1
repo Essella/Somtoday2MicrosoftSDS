@@ -175,7 +175,7 @@ try {
     $deploySyncJobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'deploy-sync-job.bicep') -Raw
     $syncJobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'sync-job.bicep') -Raw
     $jobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'job.bicep') -Raw
-    $deploySyncJobScript = Get-Content -LiteralPath (Join-Path $infraRoot 'deploy-sync-job.ps1') -Raw
+    $assignSyncJobRolesScript = Get-Content -LiteralPath (Join-Path $infraRoot 'assign-sync-job-roles.ps1') -Raw
 
     Assert-Condition -Condition ($mainBicep.Contains("resource installationTag 'Microsoft.Resources/tags")) -Message 'infra/main.bicep must store the Environment name in the resource-group tag.'
     Assert-Condition -Condition ($deploySyncJobBicep.Contains('resourceGroup().tags')) -Message 'infra/deploy-sync-job.bicep must read the Environment name from the resource-group tag.'
@@ -187,11 +187,12 @@ try {
     Assert-Condition -Condition ($jobBicep.Contains("type: 'SystemAssigned'")) -Message 'infra/job.bicep must use a system-assigned identity.'
     Assert-Condition -Condition (-not $syncJobBicep.Contains('Microsoft.Graph/')) -Message 'infra/sync-job.bicep must not deploy Microsoft Graph resources.'
     foreach ($requiredGraphRole in @('IndustryData-InboundFlow.ReadWrite.All', 'IndustryData-DataConnector.Upload', 'IndustryData.ReadBasic.All')) {
-        Assert-Condition -Condition ($deploySyncJobScript.Contains($requiredGraphRole)) -Message "Required Microsoft Graph role '$requiredGraphRole' is missing from infra/deploy-sync-job.ps1."
+        Assert-Condition -Condition ($assignSyncJobRolesScript.Contains($requiredGraphRole)) -Message "Required Microsoft Graph role '$requiredGraphRole' is missing from infra/assign-sync-job-roles.ps1."
     }
 
     Write-Host 'Comparing compiled templates with the tracked ARM templates.'
     Assert-Condition -Condition ((Get-CanonicalJson -Path $mainTemplatePath) -ceq (Get-CanonicalJson -Path (Join-Path $infraRoot 'azuredeploy.json'))) -Message 'infra/azuredeploy.json is stale. Compile infra/main.bicep and commit the generated ARM template.'
+    Assert-Condition -Condition ((Get-CanonicalJson -Path $deploySyncJobTemplatePath) -ceq (Get-CanonicalJson -Path (Join-Path $infraRoot 'azuredeploy-sync-job.json'))) -Message 'infra/azuredeploy-sync-job.json is stale. Compile infra/deploy-sync-job.bicep and commit the generated ARM template.'
 
     Write-Host 'Infrastructure validation succeeded.'
 }

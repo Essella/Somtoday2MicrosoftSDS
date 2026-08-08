@@ -1,0 +1,526 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.46.1.21595",
+      "templateHash": "4484405911099985003"
+    }
+  },
+  "parameters": {
+    "jobPrefix": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 27,
+      "metadata": {
+        "description": "Korte prefix voor deze extra Somtoday-syncjob. De uiteindelijke Job-naam wordt <prefix>-job. Maximaal 27 tekens."
+      }
+    },
+    "schoolUuidsCsv": {
+      "type": "string",
+      "minLength": 36,
+      "metadata": {
+        "description": "Somtoday-instellings-UUIDs, door komma's gescheiden. Meerdere UUIDs vormen samen één SDS-dataset."
+      }
+    },
+    "inboundFlowId": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "metadata": {
+        "description": "Inbound-flow-ID van Microsoft School Data Sync. Dit is niet de connector-ID."
+      }
+    },
+    "somtodayClientId": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "OAuth-client-ID van Somtoday Connect."
+      }
+    },
+    "somtodayEnvironment": {
+      "type": "string",
+      "defaultValue": "PROD",
+      "allowedValues": [
+        "PROD",
+        "TEST",
+        "ACCEPTATIE"
+      ]
+    },
+    "somtodayClientSecret": {
+      "type": "securestring",
+      "minLength": 1,
+      "metadata": {
+        "description": "OAuth-clientsecret van Somtoday Connect. Wordt uitsluitend als Container Apps Job-secret opgeslagen."
+      }
+    },
+    "includedLocationCodesCsv": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optionele opgenomen locatiecodes, door komma's gescheiden. Leeg betekent geen inclusiefilter."
+      }
+    },
+    "excludedLocationCodesCsv": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optionele uitgesloten locatiecodes, door komma's gescheiden. Leeg betekent geen exclusiefilter."
+      }
+    },
+    "enableGuardianSync": {
+      "type": "bool",
+      "defaultValue": false
+    },
+    "teacherUsernameFormat": {
+      "type": "string",
+      "defaultValue": "Emailadres"
+    },
+    "studentUsernameFormat": {
+      "type": "string",
+      "defaultValue": "Emailadres"
+    }
+  },
+  "variables": {
+    "environmentTagName": "Somtoday2MicrosoftSDS.environment",
+    "resourceGroupTags": "[coalesce(resourceGroup().tags, createObject())]",
+    "storedEnvironmentName": "[if(contains(variables('resourceGroupTags'), variables('environmentTagName')), trim(string(variables('resourceGroupTags')[variables('environmentTagName')])), '')]",
+    "validatedEnvironmentName": "[if(not(empty(variables('storedEnvironmentName'))), variables('storedEnvironmentName'), fail('Deze resource group bevat geen Somtoday2MicrosoftSDS.environment-tag. Maak eerst de Environment met main.bicep.'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-sync-job",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "jobPrefix": {
+            "value": "[parameters('jobPrefix')]"
+          },
+          "environmentId": {
+            "value": "[resourceId('Microsoft.App/managedEnvironments', variables('validatedEnvironmentName'))]"
+          },
+          "location": {
+            "value": "[reference(resourceId('Microsoft.App/managedEnvironments', variables('validatedEnvironmentName')), '2024-03-01', 'full').location]"
+          },
+          "schoolUuidsCsv": {
+            "value": "[parameters('schoolUuidsCsv')]"
+          },
+          "inboundFlowId": {
+            "value": "[parameters('inboundFlowId')]"
+          },
+          "somtodayClientId": {
+            "value": "[parameters('somtodayClientId')]"
+          },
+          "somtodayEnvironment": {
+            "value": "[parameters('somtodayEnvironment')]"
+          },
+          "somtodayClientSecret": {
+            "value": "[parameters('somtodayClientSecret')]"
+          },
+          "includedLocationCodesCsv": {
+            "value": "[parameters('includedLocationCodesCsv')]"
+          },
+          "excludedLocationCodesCsv": {
+            "value": "[parameters('excludedLocationCodesCsv')]"
+          },
+          "enableGuardianSync": {
+            "value": "[parameters('enableGuardianSync')]"
+          },
+          "teacherUsernameFormat": {
+            "value": "[parameters('teacherUsernameFormat')]"
+          },
+          "studentUsernameFormat": {
+            "value": "[parameters('studentUsernameFormat')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "5867787479636780582"
+            }
+          },
+          "parameters": {
+            "jobPrefix": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 27,
+              "metadata": {
+                "description": "Korte prefix voor deze Somtoday-syncjob. De uiteindelijke Job-naam wordt <prefix>-job. Maximaal 27 tekens."
+              }
+            },
+            "environmentId": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "schoolUuidsCsv": {
+              "type": "string",
+              "minLength": 36,
+              "metadata": {
+                "description": "Somtoday-instellings-UUIDs, door komma's gescheiden. Meerdere UUIDs vormen samen één SDS-dataset."
+              }
+            },
+            "inboundFlowId": {
+              "type": "string",
+              "minLength": 36,
+              "maxLength": 36,
+              "metadata": {
+                "description": "Inbound-flow-ID van Microsoft School Data Sync. Dit is niet de connector-ID."
+              }
+            },
+            "somtodayClientId": {
+              "type": "string",
+              "minLength": 1,
+              "metadata": {
+                "description": "OAuth-client-ID van Somtoday Connect."
+              }
+            },
+            "somtodayEnvironment": {
+              "type": "string",
+              "defaultValue": "PROD",
+              "allowedValues": [
+                "PROD",
+                "TEST",
+                "ACCEPTATIE"
+              ]
+            },
+            "somtodayClientSecret": {
+              "type": "securestring",
+              "minLength": 1,
+              "metadata": {
+                "description": "OAuth-clientsecret van Somtoday Connect. Wordt uitsluitend als Container Apps Job-secret opgeslagen."
+              }
+            },
+            "includedLocationCodesCsv": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optionele opgenomen locatiecodes, door komma's gescheiden. Leeg betekent geen inclusiefilter."
+              }
+            },
+            "excludedLocationCodesCsv": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optionele uitgesloten locatiecodes, door komma's gescheiden. Leeg betekent geen exclusiefilter."
+              }
+            },
+            "enableGuardianSync": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "teacherUsernameFormat": {
+              "type": "string",
+              "defaultValue": "Emailadres"
+            },
+            "studentUsernameFormat": {
+              "type": "string",
+              "defaultValue": "Emailadres"
+            }
+          },
+          "variables": {
+            "copy": [
+              {
+                "name": "schoolUuids",
+                "count": "[length(split(parameters('schoolUuidsCsv'), ','))]",
+                "input": "[trim(replace(split(parameters('schoolUuidsCsv'), ',')[copyIndex('schoolUuids')], '\"', ''))]"
+              },
+              {
+                "name": "normalizedIncludedLocationCodes",
+                "count": "[length(split(parameters('includedLocationCodesCsv'), ','))]",
+                "input": "[trim(split(parameters('includedLocationCodesCsv'), ',')[copyIndex('normalizedIncludedLocationCodes')])]"
+              },
+              {
+                "name": "normalizedExcludedLocationCodes",
+                "count": "[length(split(parameters('excludedLocationCodesCsv'), ','))]",
+                "input": "[trim(split(parameters('excludedLocationCodesCsv'), ',')[copyIndex('normalizedExcludedLocationCodes')])]"
+              },
+              {
+                "name": "schoolEnvironmentVariables",
+                "count": "[length(variables('validatedSchoolUuids'))]",
+                "input": {
+                  "name": "[format('Somtoday__SchoolUUID__{0}', copyIndex('schoolEnvironmentVariables'))]",
+                  "value": "[variables('validatedSchoolUuids')[copyIndex('schoolEnvironmentVariables')]]"
+                }
+              },
+              {
+                "name": "includedLocationEnvironmentVariables",
+                "count": "[length(variables('includedLocationCodes'))]",
+                "input": {
+                  "name": "[format('Locations__IncludedLocationCodes__{0}', copyIndex('includedLocationEnvironmentVariables'))]",
+                  "value": "[variables('includedLocationCodes')[copyIndex('includedLocationEnvironmentVariables')]]"
+                }
+              },
+              {
+                "name": "excludedLocationEnvironmentVariables",
+                "count": "[length(variables('excludedLocationCodes'))]",
+                "input": {
+                  "name": "[format('Locations__ExcludedLocationCodes__{0}', copyIndex('excludedLocationEnvironmentVariables'))]",
+                  "value": "[variables('excludedLocationCodes')[copyIndex('excludedLocationEnvironmentVariables')]]"
+                }
+              }
+            ],
+            "normalizedJobPrefix": "[toLower(trim(parameters('jobPrefix')))]",
+            "jobName": "[format('{0}-job', variables('normalizedJobPrefix'))]",
+            "imageReference": "ghcr.io/essella/somtoday2microsoftsds:latest",
+            "containerName": "somtoday2microsoftsds",
+            "replicaTimeoutSeconds": 3600,
+            "replicaRetryLimit": 1,
+            "hexValues": {
+              "0": 0,
+              "1": 1,
+              "2": 2,
+              "3": 3,
+              "4": 4,
+              "5": 5,
+              "6": 6,
+              "7": 7,
+              "8": 8,
+              "9": 9,
+              "a": 10,
+              "b": 11,
+              "c": 12,
+              "d": 13,
+              "e": 14,
+              "f": 15
+            },
+            "cronHash": "[guid(resourceGroup().id, variables('jobName'))]",
+            "cronHigh": "[variables('hexValues')[substring(variables('cronHash'), 0, 1)]]",
+            "cronLow": "[variables('hexValues')[substring(variables('cronHash'), 1, 1)]]",
+            "cronMinute": "[mod(add(mul(variables('cronHigh'), 16), variables('cronLow')), 60)]",
+            "cronExpression": "[format('{0} 2,14 * * *', variables('cronMinute'))]",
+            "includedLocationCodes": "[filter(variables('normalizedIncludedLocationCodes'), lambda('locationCode', not(empty(lambdaVariables('locationCode')))))]",
+            "excludedLocationCodes": "[filter(variables('normalizedExcludedLocationCodes'), lambda('locationCode', not(empty(lambdaVariables('locationCode')))))]",
+            "validatedInboundFlowId": "[if(equals(length(parameters('inboundFlowId')), 36), parameters('inboundFlowId'), fail('inboundFlowId must be a UUID.'))]",
+            "invalidSchoolUuids": "[filter(variables('schoolUuids'), lambda('uuid', not(equals(length(lambdaVariables('uuid')), 36))))]",
+            "validatedSchoolUuids": "[if(and(greater(length(variables('schoolUuids')), 0), equals(length(variables('invalidSchoolUuids')), 0)), variables('schoolUuids'), fail('schoolUuidsCsv must contain one or more comma-separated UUIDs.'))]",
+            "jobTags": {
+              "Somtoday2MicrosoftSDS.instance": "[variables('normalizedJobPrefix')]",
+              "Somtoday2MicrosoftSDS.somtodayEnvironment": "[parameters('somtodayEnvironment')]",
+              "Somtoday2MicrosoftSDS.inboundFlowId": "[variables('validatedInboundFlowId')]",
+              "Somtoday2MicrosoftSDS.schoolUuidCount": "[string(length(variables('validatedSchoolUuids')))]",
+              "Somtoday2MicrosoftSDS.cron": "[variables('cronExpression')]"
+            },
+            "baseEnvironmentVariables": [
+              {
+                "name": "DOTNET_ENVIRONMENT",
+                "value": "Production"
+              },
+              {
+                "name": "AZURE_TOKEN_CREDENTIALS",
+                "value": "ManagedIdentityCredential"
+              },
+              {
+                "name": "Somtoday__ClientId",
+                "value": "[parameters('somtodayClientId')]"
+              },
+              {
+                "name": "Somtoday__Environment",
+                "value": "[parameters('somtodayEnvironment')]"
+              },
+              {
+                "name": "SchoolDataSync__InboundFlowId",
+                "value": "[variables('validatedInboundFlowId')]"
+              },
+              {
+                "name": "SchoolDataSync__EnableGuardianSync",
+                "value": "[string(parameters('enableGuardianSync'))]"
+              },
+              {
+                "name": "UsernameFormat__Teacher",
+                "value": "[parameters('teacherUsernameFormat')]"
+              },
+              {
+                "name": "UsernameFormat__Student",
+                "value": "[parameters('studentUsernameFormat')]"
+              }
+            ]
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[format('deploy-{0}', variables('jobName'))]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "jobName": {
+                    "value": "[variables('jobName')]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[variables('jobTags')]"
+                  },
+                  "environmentId": {
+                    "value": "[parameters('environmentId')]"
+                  },
+                  "imageReference": {
+                    "value": "[variables('imageReference')]"
+                  },
+                  "containerName": {
+                    "value": "[variables('containerName')]"
+                  },
+                  "cronExpression": {
+                    "value": "[variables('cronExpression')]"
+                  },
+                  "replicaTimeoutSeconds": {
+                    "value": "[variables('replicaTimeoutSeconds')]"
+                  },
+                  "replicaRetryLimit": {
+                    "value": "[variables('replicaRetryLimit')]"
+                  },
+                  "somtodayClientSecret": {
+                    "value": "[parameters('somtodayClientSecret')]"
+                  },
+                  "environmentVariables": {
+                    "value": "[concat(variables('baseEnvironmentVariables'), variables('schoolEnvironmentVariables'), variables('includedLocationEnvironmentVariables'), variables('excludedLocationEnvironmentVariables'))]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.46.1.21595",
+                      "templateHash": "15611056491862553554"
+                    }
+                  },
+                  "parameters": {
+                    "jobName": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "tags": {
+                      "type": "object"
+                    },
+                    "environmentId": {
+                      "type": "string"
+                    },
+                    "imageReference": {
+                      "type": "string"
+                    },
+                    "containerName": {
+                      "type": "string"
+                    },
+                    "cronExpression": {
+                      "type": "string"
+                    },
+                    "replicaTimeoutSeconds": {
+                      "type": "int"
+                    },
+                    "replicaRetryLimit": {
+                      "type": "int"
+                    },
+                    "environmentVariables": {
+                      "type": "array"
+                    },
+                    "somtodayClientSecret": {
+                      "type": "securestring"
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.App/jobs",
+                      "apiVersion": "2024-03-01",
+                      "name": "[parameters('jobName')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[parameters('tags')]",
+                      "identity": {
+                        "type": "SystemAssigned"
+                      },
+                      "properties": {
+                        "environmentId": "[parameters('environmentId')]",
+                        "configuration": {
+                          "replicaRetryLimit": "[parameters('replicaRetryLimit')]",
+                          "replicaTimeout": "[parameters('replicaTimeoutSeconds')]",
+                          "triggerType": "Schedule",
+                          "scheduleTriggerConfig": {
+                            "cronExpression": "[parameters('cronExpression')]",
+                            "parallelism": 1,
+                            "replicaCompletionCount": 1
+                          },
+                          "secrets": [
+                            {
+                              "name": "somtoday-client-secret",
+                              "value": "[parameters('somtodayClientSecret')]"
+                            }
+                          ]
+                        },
+                        "template": {
+                          "containers": [
+                            {
+                              "name": "[parameters('containerName')]",
+                              "image": "[parameters('imageReference')]",
+                              "env": "[concat(parameters('environmentVariables'), createArray(createObject('name', 'Somtoday__ClientSecret', 'secretRef', 'somtoday-client-secret')))]",
+                              "resources": {
+                                "cpu": "[json('0.5')]",
+                                "memory": "1Gi"
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "principalId": {
+                      "type": "string",
+                      "value": "[reference(resourceId('Microsoft.App/jobs', parameters('jobName')), '2024-03-01', 'full').identity.principalId]"
+                    },
+                    "jobName": {
+                      "type": "string",
+                      "value": "[parameters('jobName')]"
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "deployedJobName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Resources/deployments', format('deploy-{0}', variables('jobName'))), '2025-04-01').outputs.jobName.value]"
+            },
+            "cronExpression": {
+              "type": "string",
+              "value": "[variables('cronExpression')]"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "deployedJobName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-sync-job'), '2025-04-01').outputs.deployedJobName.value]"
+    },
+    "containerAppsEnvironmentName": {
+      "type": "string",
+      "value": "[variables('validatedEnvironmentName')]"
+    },
+    "generatedCronExpression": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-sync-job'), '2025-04-01').outputs.cronExpression.value]"
+    }
+  }
+}
