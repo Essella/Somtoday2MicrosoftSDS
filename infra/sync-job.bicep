@@ -1,5 +1,3 @@
-extension microsoftGraphV1
-
 targetScope = 'resourceGroup'
 
 @description('Korte prefix voor deze Somtoday-syncjob. De uiteindelijke Job-naam wordt <prefix>-job. Maximaal 27 tekens.')
@@ -168,44 +166,6 @@ module scheduledJob './job.bicep' = {
       excludedLocationEnvironmentVariables
     )
   }
-}
-
-resource microsoftGraph 'Microsoft.Graph/servicePrincipals@v1.0' existing = {
-  appId: '00000003-0000-0000-c000-000000000000'
-}
-
-var inboundFlowReadWriteRoles = filter(microsoftGraph.appRoles, role => role.value == 'IndustryData-InboundFlow.ReadWrite.All')
-var connectorUploadRoles = filter(microsoftGraph.appRoles, role => role.value == 'IndustryData-DataConnector.Upload')
-var operationReadRoles = filter(microsoftGraph.appRoles, role => role.value == 'IndustryData.ReadBasic.All')
-var inboundFlowReadWriteRoleId = length(inboundFlowReadWriteRoles) == 1
-  ? first(inboundFlowReadWriteRoles)!.id
-  : fail('Microsoft Graph must expose exactly one IndustryData-InboundFlow.ReadWrite.All application role.')
-var connectorUploadRoleId = length(connectorUploadRoles) == 1
-  ? first(connectorUploadRoles)!.id
-  : fail('Microsoft Graph must expose exactly one IndustryData-DataConnector.Upload application role.')
-var operationReadRoleId = length(operationReadRoles) == 1
-  ? first(operationReadRoles)!.id
-  : fail('Microsoft Graph must expose exactly one IndustryData.ReadBasic.All application role.')
-
-resource inboundFlowReadWriteRoleAssignment 'Microsoft.Graph/appRoleAssignedTo@v1.0' = {
-  appRoleId: inboundFlowReadWriteRoleId
-  principalId: scheduledJob.outputs.principalId
-  resourceId: microsoftGraph.id
-  resourceDisplayName: microsoftGraph.displayName
-}
-
-resource connectorUploadRoleAssignment 'Microsoft.Graph/appRoleAssignedTo@v1.0' = {
-  appRoleId: connectorUploadRoleId
-  principalId: scheduledJob.outputs.principalId
-  resourceId: microsoftGraph.id
-  resourceDisplayName: microsoftGraph.displayName
-}
-
-resource operationReadRoleAssignment 'Microsoft.Graph/appRoleAssignedTo@v1.0' = {
-  appRoleId: operationReadRoleId
-  principalId: scheduledJob.outputs.principalId
-  resourceId: microsoftGraph.id
-  resourceDisplayName: microsoftGraph.displayName
 }
 
 output deployedJobName string = scheduledJob.outputs.jobName

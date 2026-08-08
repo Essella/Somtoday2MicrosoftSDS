@@ -35,14 +35,11 @@ public sealed class InfrastructureTemplateTests
     }
 
     [Fact]
-    public void SharedSyncJobAssignsOnlyRequiredGraphRolesAndNormalizesInputs()
+    public void SharedSyncJobNormalizesInputsAndKeepsTheDeploymentAzureOnly()
     {
         string syncJob = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "infra", "sync-job.bicep"));
 
-        Assert.Equal(1, Count(syncJob, "'IndustryData-InboundFlow.ReadWrite.All'"));
-        Assert.Equal(1, Count(syncJob, "'IndustryData-DataConnector.Upload'"));
-        Assert.Equal(1, Count(syncJob, "'IndustryData.ReadBasic.All'"));
-        Assert.DoesNotContain("appRoleId: '", syncJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("Microsoft.Graph/", syncJob, StringComparison.Ordinal);
         Assert.Contains("replace(value, '\"', '')", syncJob, StringComparison.Ordinal);
         Assert.Contains("filter(normalizedIncludedLocationCodes", syncJob, StringComparison.Ordinal);
         Assert.Contains("filter(normalizedExcludedLocationCodes", syncJob, StringComparison.Ordinal);
@@ -67,15 +64,21 @@ public sealed class InfrastructureTemplateTests
     }
 
     [Fact]
-    public void InfrastructureKeepsTheGraphExtensionForTheCliJobEntrypoint()
+    public void InfrastructureUsesThePowerShellScriptForGraphRoleAssignments()
     {
         string root = FindRepositoryRoot();
-        string configuration = File.ReadAllText(Path.Combine(root, "infra", "bicepconfig.json"));
+        string script = File.ReadAllText(Path.Combine(root, "infra", "deploy-sync-job.ps1"));
         string jobExample = File.ReadAllText(Path.Combine(root, "infra", "deploy-sync-job.example.bicepparam"));
 
-        Assert.Contains("microsoftGraphV1", configuration, StringComparison.Ordinal);
+        Assert.Contains("Connect-MgGraph", script, StringComparison.Ordinal);
+        Assert.Contains("'Application.Read.All'", script, StringComparison.Ordinal);
+        Assert.Contains("'AppRoleAssignment.ReadWrite.All'", script, StringComparison.Ordinal);
+        Assert.Equal(1, Count(script, "'IndustryData-InboundFlow.ReadWrite.All'"));
+        Assert.Equal(1, Count(script, "'IndustryData-DataConnector.Upload'"));
+        Assert.Equal(1, Count(script, "'IndustryData.ReadBasic.All'"));
         Assert.Contains("using './deploy-sync-job.bicep'", jobExample, StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(root, "infra", "deploy-sync-job.bicep")));
+        Assert.False(File.Exists(Path.Combine(root, "infra", "bicepconfig.json")));
         Assert.False(File.Exists(Path.Combine(root, "infra", "additional-job.bicep")));
         Assert.False(File.Exists(Path.Combine(root, "infra", "azuredeploy-additional-job.json")));
         Assert.False(File.Exists(Path.Combine(root, "infra", "uiFormDefinition.json")));
@@ -92,6 +95,7 @@ public sealed class InfrastructureTemplateTests
         Assert.Contains("Read-Host 'Somtoday client secret' -AsSecureString", script, StringComparison.Ordinal);
         Assert.Contains("readEnvironmentVariable('SOMTODAY_CLIENT_SECRET')", script, StringComparison.Ordinal);
         Assert.Contains("[AllowEmptyString()]", script, StringComparison.Ordinal);
+        Assert.Contains("Grant-JobGraphRoles", script, StringComparison.Ordinal);
         Assert.DoesNotContain("Write-Host $env:SOMTODAY_CLIENT_SECRET", script, StringComparison.Ordinal);
     }
 

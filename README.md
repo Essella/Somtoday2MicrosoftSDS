@@ -48,8 +48,8 @@ Kies precies de set die past bij de connector die je wilt aanmaken en upload die
 
 - Somtoday Connect-client-ID, clientsecret en minstens één instellings-UUID.
 - Een bestaande SDS-inbound flow met een Azure Data Lake-connector voor V1 of V2.1.
-- Een Azure-abonnement en rechten om resources en roltoewijzingen te maken.
-- Voor het aanmaken van een syncjob via Azure CLI: Microsoft Entra-rechten `Application.Read.All` en `AppRoleAssignment.ReadWrite.All` met de benodigde tenanttoestemming.
+- Een Azure-abonnement en rechten om resources te maken.
+- Voor het aanmaken van een syncjob: een Microsoft Entra-beheerdersrol die application roles mag toewijzen, bijvoorbeeld Global Administrator, en toestemming voor `Application.Read.All` en `AppRoleAssignment.ReadWrite.All`.
 - Voor lokale ontwikkeling: .NET 10 en een `DefaultAzureCredential`-identiteit met SDS-toegang.
 
 De Job-identiteit krijgt `IndustryData-InboundFlow.ReadWrite.All` en `IndustryData-DataConnector.Upload`, gelijk aan Microsofts Power Automate-route, plus `IndustryData.ReadBasic.All` voor het pollen van de validatieoperatie. De runtime gebruikt Microsoft Graph `/beta`; controleer wijzigingen in deze API vóór productie-upgrades.
@@ -64,7 +64,7 @@ Gebruik dit voor een nieuwe Somtoday2MicrosoftSDS Container Apps Environment in 
 
 ### Syncjob maken
 
-Maak iedere syncjob daarna met het interactieve Cloud Shell-script. Het toont de resourcegroepen met een gekoppelde Somtoday2MicrosoftSDS Environment, controleert de gekozen Environment en vraagt daarna de Job-instellingen. Je voert geen Environmentnaam of resource-ID opnieuw in.
+Maak iedere syncjob daarna met het interactieve Cloud Shell-script. Het toont de resourcegroepen met een gekoppelde Somtoday2MicrosoftSDS Environment, controleert de gekozen Environment en vraagt daarna de Job-instellingen. Je voert geen Environmentnaam of resource-ID opnieuw in. Bij de eerste uitvoering kan Microsoft Graph om toestemming voor de benodigde roltoewijzingen vragen.
 
 ```powershell
 irm "https://raw.githubusercontent.com/Essella/Somtoday2MicrosoftSDS/main/infra/deploy-sync-job.ps1" | iex

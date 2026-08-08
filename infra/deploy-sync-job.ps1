@@ -63,6 +63,67 @@ function ConvertTo-BicepString {
     return "'$($Value.Replace("'", "''"))'"
 }
 
+function Ensure-MicrosoftGraphAuthenticationModule {
+    if ($null -eq (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
+        Write-Host 'Installing Microsoft.Graph.Authentication for the Graph permission assignment.'
+        Install-Module -Name Microsoft.Graph.Authentication -Scope CurrentUser -Repository PSGallery -Force -AllowClobber
+    }
+
+    Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+}
+
+function Grant-JobGraphRoles {
+    param(
+        [Parameter(Mandatory)]
+        [string]$JobPrincipalId
+    )
+
+    $requiredRoleValues = @(
+        'IndustryData-InboundFlow.ReadWrite.All'
+        'IndustryData-DataConnector.Upload'
+        'IndustryData.ReadBasic.All'
+    )
+    $createdGraphConnection = $null -eq (Get-MgContext)
+
+    try {
+        Connect-MgGraph -Scopes @('Application.Read.All', 'AppRoleAssignment.ReadWrite.All') -NoWelcome
+
+        $graphServicePrincipals = @((Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/servicePrincipals?`$filter=appId%20eq%20'00000003-0000-0000-c000-000000000000'&`$select=id,appRoles").value)
+        if ($graphServicePrincipals.Count -ne 1) {
+            throw 'Microsoft Graph service principal could not be resolved uniquely.'
+        }
+
+        $graphServicePrincipal = $graphServicePrincipals[0]
+        $existingAssignments = @((Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/servicePrincipals/$JobPrincipalId/appRoleAssignments?`$select=appRoleId,resourceId").value)
+
+        foreach ($roleValue in $requiredRoleValues) {
+            $roles = @($graphServicePrincipal.appRoles | Where-Object { $_.value -eq $roleValue -and $_.allowedMemberTypes -contains 'Application' })
+            if ($roles.Count -ne 1) {
+                throw "Microsoft Graph must expose exactly one application role named '$roleValue'."
+            }
+
+            $role = $roles[0]
+            $isAssigned = $null -ne ($existingAssignments | Where-Object { $_.appRoleId -eq $role.id -and $_.resourceId -eq $graphServicePrincipal.id })
+            if ($isAssigned) {
+                continue
+            }
+
+            $body = @{
+                principalId = $JobPrincipalId
+                resourceId = $graphServicePrincipal.id
+                appRoleId = $role.id
+            } | ConvertTo-Json -Compress
+            Invoke-MgGraphRequest -Method POST -Uri "https://graph.microsoft.com/v1.0/servicePrincipals/$JobPrincipalId/appRoleAssignments" -Body $body -ContentType 'application/json' | Out-Null
+            Write-Host "Assigned Microsoft Graph role '$roleValue' to the Job identity."
+        }
+    }
+    finally {
+        if ($createdGraphConnection -and $null -ne (Get-MgContext)) {
+            Disconnect-MgGraph | Out-Null
+        }
+    }
+}
+
 function Select-EnvironmentResourceGroup {
     $groups = @(Invoke-Az -Arguments @('group', 'list', '--output', 'json') | Out-String | ConvertFrom-Json)
     $candidates = @(
@@ -130,7 +191,7 @@ try {
 
     New-Item -ItemType Directory -Path $temporaryDirectory | Out-Null
     $baseUri = "https://raw.githubusercontent.com/$repositoryOwner/$repositoryName/$RepositoryRef/infra"
-    foreach ($fileName in @('deploy-sync-job.bicep', 'sync-job.bicep', 'job.bicep', 'bicepconfig.json')) {
+    foreach ($fileName in @('deploy-sync-job.bicep', 'sync-job.bicep', 'job.bicep')) {
         Invoke-WebRequest -Uri "$baseUri/$fileName" -OutFile (Join-Path $temporaryDirectory $fileName)
     }
 
@@ -154,6 +215,14 @@ param somtodayClientSecret = readEnvironmentVariable('SOMTODAY_CLIENT_SECRET')
     $secretBstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($clientSecret)
     $env:SOMTODAY_CLIENT_SECRET = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($secretBstr)
     Invoke-Az -Arguments @('deployment', 'group', 'create', '--resource-group', $selectedEnvironment.ResourceGroupName, '--parameters', $parametersPath, '--only-show-errors') | Out-Host
+    $jobName = "$($jobPrefix.Trim().ToLowerInvariant())-job"
+    $jobPrincipalId = Invoke-Az -Arguments @('containerapp', 'job', 'show', '--resource-group', $selectedEnvironment.ResourceGroupName, '--name', $jobName, '--query', 'identity.principalId', '--output', 'tsv')
+    if ([string]::IsNullOrWhiteSpace($jobPrincipalId)) {
+        throw 'The Job system-assigned identity is not available yet. Run the script again after Microsoft Entra replication.'
+    }
+
+    Ensure-MicrosoftGraphAuthenticationModule
+    Grant-JobGraphRoles -JobPrincipalId $jobPrincipalId.Trim()
 }
 finally {
     if ($secretBstr -ne [IntPtr]::Zero) {

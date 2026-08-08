@@ -133,6 +133,7 @@ function Assert-JobTemplate {
     Assert-Condition -Condition (@(@('jobPrefix', 'schoolUuidsCsv', 'inboundFlowId', 'somtodayClientId', 'somtodayClientSecret') | Where-Object { $_ -notin $parameterNames }).Count -eq 0) -Message 'infra/deploy-sync-job.bicep is missing required Job parameters.'
     Assert-Condition -Condition (@($forbiddenParameterNames | Where-Object { $_ -in $parameterNames }).Count -eq 0) -Message 'infra/deploy-sync-job.bicep exposes an unsupported parameter.'
     Assert-Condition -Condition (@($Template.resources | Where-Object type -EQ 'Microsoft.Resources/deployments').Count -gt 0) -Message 'infra/deploy-sync-job.bicep must contain the Container Apps Job deployment module.'
+    Assert-Condition -Condition (@($Template.resources | Where-Object type -Like 'Microsoft.Graph/*').Count -eq 0) -Message 'infra/deploy-sync-job.bicep must not deploy Microsoft Graph resources.'
 }
 
 New-Item -ItemType Directory -Path $temporaryDirectory | Out-Null
@@ -174,9 +175,8 @@ try {
     $deploySyncJobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'deploy-sync-job.bicep') -Raw
     $syncJobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'sync-job.bicep') -Raw
     $jobBicep = Get-Content -LiteralPath (Join-Path $infraRoot 'job.bicep') -Raw
-    $bicepConfiguration = Get-Content -LiteralPath (Join-Path $infraRoot 'bicepconfig.json') -Raw | ConvertFrom-Json
+    $deploySyncJobScript = Get-Content -LiteralPath (Join-Path $infraRoot 'deploy-sync-job.ps1') -Raw
 
-    Assert-Condition -Condition ($bicepConfiguration.extensions.PSObject.Properties.Name -contains 'microsoftGraphV1') -Message 'infra/bicepconfig.json must configure the microsoftGraphV1 extension.'
     Assert-Condition -Condition ($mainBicep.Contains("resource installationTag 'Microsoft.Resources/tags")) -Message 'infra/main.bicep must store the Environment name in the resource-group tag.'
     Assert-Condition -Condition ($deploySyncJobBicep.Contains('resourceGroup().tags')) -Message 'infra/deploy-sync-job.bicep must read the Environment name from the resource-group tag.'
     Assert-Condition -Condition ($syncJobBicep.Contains("var imageReference = 'ghcr.io/essella/somtoday2microsoftsds:latest'")) -Message 'infra/sync-job.bicep must use the fixed production image.'
@@ -185,8 +185,9 @@ try {
     Assert-Condition -Condition ($syncJobBicep.Contains('filter(normalizedExcludedLocationCodes')) -Message 'infra/sync-job.bicep must remove empty excluded location-code values.'
     Assert-Condition -Condition ([regex]::Matches($jobBicep, "resource\s+job\s+'Microsoft\.App/jobs").Count -eq 1) -Message 'infra/job.bicep must contain exactly one Microsoft.App/jobs resource.'
     Assert-Condition -Condition ($jobBicep.Contains("type: 'SystemAssigned'")) -Message 'infra/job.bicep must use a system-assigned identity.'
+    Assert-Condition -Condition (-not $syncJobBicep.Contains('Microsoft.Graph/')) -Message 'infra/sync-job.bicep must not deploy Microsoft Graph resources.'
     foreach ($requiredGraphRole in @('IndustryData-InboundFlow.ReadWrite.All', 'IndustryData-DataConnector.Upload', 'IndustryData.ReadBasic.All')) {
-        Assert-Condition -Condition ($syncJobBicep.Contains($requiredGraphRole)) -Message "Required Microsoft Graph role '$requiredGraphRole' is missing from infra/sync-job.bicep."
+        Assert-Condition -Condition ($deploySyncJobScript.Contains($requiredGraphRole)) -Message "Required Microsoft Graph role '$requiredGraphRole' is missing from infra/deploy-sync-job.ps1."
     }
 
     Write-Host 'Comparing compiled templates with the tracked ARM templates.'
