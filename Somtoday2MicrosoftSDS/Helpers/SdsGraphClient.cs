@@ -283,15 +283,59 @@ internal sealed class SdsGraphClient
         Uri pollingLocation = location.IsAbsoluteUri
             ? location
             : new Uri(_graphBaseUri, location);
-        if (!string.Equals(pollingLocation.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(pollingLocation.Host, "graph.microsoft.com", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(pollingLocation.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(pollingLocation.Host, "graph.microsoft.com", StringComparison.OrdinalIgnoreCase))
         {
-            throw new SdsPublicationException(
-                "SDS validation returned an untrusted polling location",
-                safeOperation: "read SDS validation polling location: untrusted location");
+            return pollingLocation;
         }
 
-        return pollingLocation;
+        if (TryGetValidationOperationId(pollingLocation, out string operationId))
+        {
+            return GraphUri($"beta/external/industryData/operations/{operationId}");
+        }
+
+        throw new SdsPublicationException(
+            "SDS validation returned an untrusted polling location",
+            safeOperation: "read SDS validation polling location: untrusted location");
+    }
+
+    private static bool TryGetValidationOperationId(Uri location, out string operationId)
+    {
+        operationId = null;
+        if (!location.IsAbsoluteUri || !string.IsNullOrEmpty(location.Query) || !string.IsNullOrEmpty(location.Fragment))
+        {
+            return false;
+        }
+
+        string[] segments = location.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        int operationIdIndex = segments.Length == 5
+            && string.Equals(segments[0], "beta", StringComparison.Ordinal)
+            && string.Equals(segments[1], "external", StringComparison.Ordinal)
+            && string.Equals(segments[2], "industryData", StringComparison.Ordinal)
+            && string.Equals(segments[3], "operations", StringComparison.Ordinal)
+            ? 4
+            : segments.Length == 4
+                && string.Equals(segments[0], "external", StringComparison.Ordinal)
+                && string.Equals(segments[1], "industryData", StringComparison.Ordinal)
+                && string.Equals(segments[2], "operations", StringComparison.Ordinal)
+                ? 3
+                : -1;
+        if (operationIdIndex < 0 || !IsSafeOperationId(segments[operationIdIndex]))
+        {
+            return false;
+        }
+
+        operationId = segments[operationIdIndex];
+        return true;
+    }
+
+    private static bool IsSafeOperationId(string value)
+    {
+        return value.Length is > 0 and <= 128
+            && value.All(character => character is (>= 'A' and <= 'Z')
+                or (>= 'a' and <= 'z')
+                or (>= '0' and <= '9')
+                or '-' or '_');
     }
 
     private async Task PollValidationAsync(Uri location, CancellationToken cancellationToken)
