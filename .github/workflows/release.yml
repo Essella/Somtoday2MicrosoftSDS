@@ -81,6 +81,14 @@ jobs:
       - name: Checkout release tag
         uses: actions/checkout@v7
 
+      - name: Prepare latest Bicep validation
+        shell: pwsh
+        run: |
+          az bicep install
+          az bicep upgrade
+          Write-Host "Commit: $env:GITHUB_SHA"
+          az bicep version
+
       - name: Validate Bicep, ARM, and portal form
         shell: pwsh
         run: ./scripts/validate-infrastructure.ps1

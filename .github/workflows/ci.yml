@@ -104,6 +104,14 @@ jobs:
           docker stop --time 10 "$container_name"
           test "$(docker inspect "$container_name" --format '{{.State.ExitCode}}')" = "1"
 
+      - name: Prepare latest Bicep validation
+        shell: pwsh
+        run: |
+          az bicep install
+          az bicep upgrade
+          Write-Host "Commit: $env:GITHUB_SHA"
+          az bicep version
+
       - name: Validate infrastructure
         shell: pwsh
         run: ./scripts/validate-infrastructure.ps1
