@@ -151,14 +151,20 @@ public sealed class SdsGraphClientTests
         CaptureHandler graph = new(request => Json(
             HttpStatusCode.OK,
             "{\"sessionUrl\":\"https://temporary.blob.core.windows.net/container?sig=secret\"}"));
-        CaptureHandler uploads = new(_ => Response(HttpStatusCode.BadRequest));
+        CaptureHandler uploads = new(_ => StorageError(
+            HttpStatusCode.BadRequest,
+            "InvalidHeaderValue"));
         SdsGraphClient client = Client(graph, uploads);
 
-        await Assert.ThrowsAsync<SdsPublicationException>(() => client.UploadAndValidateAsync(
+        SdsPublicationException exception = await Assert.ThrowsAsync<SdsPublicationException>(() => client.UploadAndValidateAsync(
             ConnectorId,
             new FileHelper().CreateEmptyV1Dataset(false),
             CancellationToken.None));
 
+        Assert.Equal("upload SDS CSV file 'School.csv'", exception.SafeOperation);
+        Assert.Equal(
+            "SdsPublicationException (upload SDS CSV file 'School.csv'; HTTP 400; x-ms-error-code=InvalidHeaderValue)",
+            SafeExceptionSummary.Create(exception));
         Assert.Single(uploads.Requests);
         Assert.DoesNotContain(graph.Requests, request => request.Method == HttpMethod.Post);
     }
@@ -322,6 +328,41 @@ public sealed class SdsGraphClientTests
     }
 
     [Fact]
+    public void SafeExceptionSummaryIncludesTheFixedPublicationOperation()
+    {
+        string summary = SafeExceptionSummary.Create(
+            new SdsPublicationException(
+                "response body must remain private",
+                HttpStatusCode.BadRequest,
+                "create the SDS upload session"));
+
+        Assert.Equal(
+            "SdsPublicationException (create the SDS upload session; HTTP 400)",
+            summary);
+        Assert.DoesNotContain("response body", summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DoesNotLogAnUnsafeStorageErrorCodeHeader()
+    {
+        CaptureHandler graph = new(_ => Json(
+            HttpStatusCode.OK,
+            "{\"sessionUrl\":\"https://temporary.blob.core.windows.net/container?sig=secret\"}"));
+        CaptureHandler uploads = new(_ => StorageError(
+            HttpStatusCode.BadRequest,
+            "private-value?sig=secret"));
+        SdsPublicationException exception = await Assert.ThrowsAsync<SdsPublicationException>(() => Client(
+            graph,
+            uploads).UploadAndValidateAsync(
+                ConnectorId,
+                new FileHelper().CreateEmptyV1Dataset(false),
+                CancellationToken.None));
+
+        Assert.Null(exception.SafeStorageErrorCode);
+        Assert.DoesNotContain("private-value", SafeExceptionSummary.Create(exception), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RetryPolicyRespectsRetryAfterAndDoesNotReuseRequest()
     {
         int attempts = 0;
@@ -455,6 +496,13 @@ public sealed class SdsGraphClientTests
             response.Headers.Location = new Uri(location);
         }
 
+        return response;
+    }
+
+    private static HttpResponseMessage StorageError(HttpStatusCode status, string errorCode)
+    {
+        HttpResponseMessage response = Response(status);
+        response.Headers.Add("x-ms-error-code", errorCode);
         return response;
     }
 

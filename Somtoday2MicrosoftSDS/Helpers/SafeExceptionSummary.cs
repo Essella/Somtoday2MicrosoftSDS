@@ -16,9 +16,19 @@ internal static class SafeExceptionSummary
                 $"{apiException.GetType().Name} (HTTP {apiException.StatusCode})",
             HttpRequestException httpRequest when httpRequest.StatusCode.HasValue =>
                 $"{httpRequest.GetType().Name} (HTTP {(int)httpRequest.StatusCode.Value})",
+            SdsPublicationException publication when publication.StatusCode.HasValue
+                && !string.IsNullOrWhiteSpace(publication.SafeOperation) => FormatPublicationFailure(publication),
             SdsPublicationException publication when publication.StatusCode.HasValue =>
                 $"{publication.GetType().Name} (HTTP {(int)publication.StatusCode.Value})",
             _ => exception.GetType().Name
         };
+    }
+
+    private static string FormatPublicationFailure(SdsPublicationException publication)
+    {
+        string summary = $"{publication.GetType().Name} ({publication.SafeOperation}; HTTP {(int)publication.StatusCode.Value}";
+        return !string.IsNullOrWhiteSpace(publication.SafeStorageErrorCode)
+            ? $"{summary}; x-ms-error-code={publication.SafeStorageErrorCode})"
+            : $"{summary})";
     }
 }

@@ -11,6 +11,7 @@ Only the latest release receives security fixes. Report suspected vulnerabilitie
 - Production Graph access is constrained to the Job's system-assigned managed identity. The Cloud Shell role-assignment script grants only `IndustryData-DataConnector.Read.All`, `IndustryData-DataConnector.Upload`, and the validation-operation polling permission `IndustryData.ReadBasic.All` to tagged Jobs in tagged resource groups.
 - The Graph bearer token is sent only to `graph.microsoft.com`. SAS uploads use a separate `HttpClient` and never receive an Authorization header.
 - Treat the upload-session URL as a secret. Preserve its query string for upload but never log it, a filename URL containing it, or response bodies that may expose it.
+- For an SAS upload failure, logs can include `x-ms-error-code` only after strict ASCII alphanumeric validation. Do not log other response headers or response bodies.
 - CSV data is built in memory and persists only in the temporary SDS-owned SAS container. This repository provisions no application Storage Account.
 - Guardian-name exclusion logs contain only a count. CSV CR/LF errors contain only SDS version, file name, and column name.
 - Preserve cancellation through token acquisition, Graph calls, retries, SAS uploads, and validation polling.

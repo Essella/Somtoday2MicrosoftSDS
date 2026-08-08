@@ -10,13 +10,25 @@ internal sealed record SdsConnector(Guid Id, SdsDatasetFormat Format);
 
 internal sealed class SdsPublicationException : Exception
 {
-    internal SdsPublicationException(string message, HttpStatusCode? statusCode = null)
+    internal SdsPublicationException(
+        string message,
+        HttpStatusCode? statusCode = null,
+        string safeOperation = null,
+        string safeStorageErrorCode = null)
         : base(message)
     {
         StatusCode = statusCode;
+        SafeOperation = safeOperation;
+        SafeStorageErrorCode = safeStorageErrorCode;
     }
 
     internal HttpStatusCode? StatusCode { get; }
+
+    // This value is supplied only by the SDS client. It must not contain response data or URIs.
+    internal string SafeOperation { get; }
+
+    // This value is a validated Azure Storage error-code header value.
+    internal string SafeStorageErrorCode { get; }
 }
 
 internal sealed class SdsGraphClient
@@ -203,7 +215,7 @@ internal sealed class SdsGraphClient
             },
             cancellationToken);
 
-        RequireStatus(response, HttpStatusCode.Created, "upload an SDS CSV file");
+        RequireStatus(response, HttpStatusCode.Created, $"upload SDS CSV file '{file.Name}'");
     }
 
     private async Task<Uri> StartValidationAsync(Guid connectorId, CancellationToken cancellationToken)
@@ -317,8 +329,24 @@ internal sealed class SdsGraphClient
         {
             throw new SdsPublicationException(
                 $"Unable to {operation}",
-                response.StatusCode);
+                response.StatusCode,
+                operation,
+                GetSafeStorageErrorCode(response));
         }
+    }
+
+    private static string GetSafeStorageErrorCode(HttpResponseMessage response)
+    {
+        if (!response.Headers.TryGetValues("x-ms-error-code", out IEnumerable<string> values))
+        {
+            return null;
+        }
+
+        string value = values.SingleOrDefault();
+        return value is { Length: > 0 and <= 128 }
+            && value.All(character => char.IsAsciiLetterOrDigit(character))
+                ? value
+                : null;
     }
 
     private static void EnsureCompleteFileSet(PublicationDataset dataset)

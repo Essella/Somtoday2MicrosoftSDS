@@ -2,6 +2,8 @@
 
 Somtoday2MicrosoftSDS is een eenmalig uitgevoerde .NET 10-batchapplicatie. Een run leest één of meer Somtoday-instellingen, maakt daarvan één volledige Microsoft School Data Sync-dataset, uploadt deze rechtstreeks naar de tijdelijke SAS-container van SDS en wacht op de validatie-uitkomst.
 
+Bij een HTTP-fout logt de applicatie veilig welke vaste SDS-stap mislukte en de HTTP-status. Bij een SAS-uploadfout komt ook de gevalideerde `x-ms-error-code` in de log. Response bodies, tokens, SAS-querystrings en persoonsgegevens worden niet gelogd.
+
 De SDS-connector bepaalt automatisch het formaat: `schoolDataSyncV1` geeft V1 en `schoolDataSyncV2Rev1` geeft V2.1. Er is geen instelling voor de CSV-versie en er wordt nooit in één run zowel V1 als V2.1 geüpload.
 
 [![Ga direct naar Uitrollen](https://img.shields.io/badge/Ga%20direct%20naar-Uitrollen-0078D4?style=for-the-badge&logo=microsoftazure&logoColor=white)](#uitrollen)
