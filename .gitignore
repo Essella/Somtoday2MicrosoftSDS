@@ -6,3 +6,5 @@ artifacts/
 infra/main.bicepparam
 infra/deploy-sync-job.bicepparam
 .vscode/
+# Generated Graphify knowledge graph
+graphify-out/
