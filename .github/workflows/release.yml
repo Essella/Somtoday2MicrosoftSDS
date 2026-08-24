@@ -3,25 +3,59 @@ name: Release Somtoday2MicrosoftSDS
 on:
   release:
     types: [published]
+  schedule:
+    - cron: '44 4 * * 4'
+  workflow_dispatch:
+
+concurrency:
+  group: release-container-publication
+  cancel-in-progress: false
 
 permissions: {}
 
 jobs:
   version:
-    name: Validate version
+    name: Resolve and validate version
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      is_refresh: ${{ steps.version.outputs.is_refresh }}
 
     steps:
-      - name: Validate and extract release version
+      - name: Resolve and validate release version
         id: version
         shell: pwsh
         env:
+          EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
         run: |
-          $tag = $env:RELEASE_TAG
+          if ($env:EVENT_NAME -eq 'release') {
+            $tag = $env:RELEASE_TAG
+            $isRefresh = 'false'
+          }
+          elseif ($env:EVENT_NAME -eq 'schedule' -or $env:EVENT_NAME -eq 'workflow_dispatch') {
+            $response = gh api "repos/$env:GH_REPOSITORY/releases/latest"
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Could not resolve the latest published GitHub Release.'
+            }
+
+            $release = ($response -join "`n") | ConvertFrom-Json
+            if ($release.draft -or $release.prerelease -or [string]::IsNullOrWhiteSpace($release.tag_name)) {
+              throw 'The latest GitHub Release must be published and must not be a prerelease.'
+            }
+
+            $tag = [string]$release.tag_name
+            $isRefresh = 'true'
+          }
+          else {
+            throw "Unsupported workflow event '$env:EVENT_NAME'."
+          }
+
           if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+\.\d+)$') {
             throw "Release tag '$tag' is invalid. Use v1.2.3.4."
           }
@@ -34,7 +68,9 @@ jobs:
             throw "Every version component must be between 0 and 65534."
           }
 
-          "version=$version" >> $env:GITHUB_OUTPUT
+          "version=$($version.ToString(4))" >> $env:GITHUB_OUTPUT
+          "release_tag=$tag" >> $env:GITHUB_OUTPUT
+          "is_refresh=$isRefresh" >> $env:GITHUB_OUTPUT
 
   test:
     name: Test release (${{ matrix.os }})
@@ -50,6 +86,8 @@ jobs:
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.release_tag }}
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
@@ -80,13 +118,16 @@ jobs:
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.release_tag }}
 
       - name: Prepare latest Bicep validation
         shell: pwsh
         run: |
           az bicep install
           az bicep upgrade
-          Write-Host "Commit: $env:GITHUB_SHA"
+          $sourceRevision = git rev-parse HEAD
+          Write-Host "Commit: $sourceRevision"
           az bicep version
 
       - name: Validate Bicep, ARM, and portal form
@@ -96,6 +137,7 @@ jobs:
   csv-bootstrap-release:
     name: Generate and publish CSV bootstrap zips
     needs: [version, test, infrastructure]
+    if: ${{ needs.version.outputs.is_refresh == 'false' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -103,6 +145,8 @@ jobs:
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.release_tag }}
 
       - name: Generate all CSV bootstrap sets
         shell: pwsh
@@ -142,10 +186,20 @@ jobs:
       id-token: write
     env:
       IMAGE_NAME: ghcr.io/essella/somtoday2microsoftsds
+      REFRESH_TAG: ${{ needs.version.outputs.version }}-refresh.${{ github.run_number }}
 
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.release_tag }}
+
+      - name: Resolve release commit
+        id: source
+        shell: bash
+        run: |
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "short_revision=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -157,18 +211,41 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify refresh tag is new
+        if: ${{ needs.version.outputs.is_refresh == 'true' }}
+        shell: bash
+        run: |
+          set +e
+          inspect_output=$(docker buildx imagetools inspect "$IMAGE_NAME:$REFRESH_TAG" 2>&1)
+          inspect_status=$?
+          set -e
+
+          if [ "$inspect_status" -eq 0 ]; then
+            echo "::error::Refresh tag '$REFRESH_TAG' already exists. Start a new workflow run to create a new immutable refresh tag."
+            exit 1
+          fi
+
+          if ! grep -Eqi 'manifest unknown|name unknown|not found' <<< "$inspect_output"; then
+            echo "$inspect_output"
+            echo "::error::Could not determine whether refresh tag '$REFRESH_TAG' already exists."
+            exit "$inspect_status"
+          fi
+
       - name: Generate image metadata
         id: metadata
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ needs.version.outputs.version }}
-            type=sha,format=short
+            type=raw,value=${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.is_refresh == 'false' }}
+            type=raw,value=sha-${{ steps.source.outputs.short_revision }},enable=${{ needs.version.outputs.is_refresh == 'false' }}
+            type=raw,value=${{ env.REFRESH_TAG }},enable=${{ needs.version.outputs.is_refresh == 'true' }}
             type=raw,value=latest
           labels: |
             org.opencontainers.image.source=https://github.com/Essella/Somtoday2MicrosoftSDS
             org.opencontainers.image.licenses=AGPL-3.0-or-later
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.revision }}
 
       - name: Build and push image
         id: build
@@ -176,6 +253,7 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
+          pull: true
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
@@ -183,7 +261,7 @@ jobs:
           provenance: false
           build-args: |
             VERSION=${{ needs.version.outputs.version }}
-            REVISION=${{ github.sha }}
+            REVISION=${{ steps.source.outputs.revision }}
 
       - name: Attest build provenance
         uses: actions/attest@v4

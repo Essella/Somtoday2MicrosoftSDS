@@ -2,7 +2,7 @@
 
 ## Supported versions and reporting
 
-Only the latest release receives security fixes. Report suspected vulnerabilities privately with GitHub's **Report a vulnerability** feature. Do not include credentials or identifiable pupil, guardian, or employee data.
+Only the latest release is supported. Its container image is rebuilt weekly from the same release tag to receive updated .NET SDK, .NET runtime, and Linux base-image packages without changing the application version. Each successful refresh has a unique container tag, and `latest` moves to that digest. Report suspected vulnerabilities privately with GitHub's **Report a vulnerability** feature. Do not include credentials or identifiable pupil, guardian, or employee data.
 
 ## Secrets and personal data
 

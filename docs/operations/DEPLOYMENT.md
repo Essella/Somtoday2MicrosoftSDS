@@ -10,6 +10,8 @@ The templates create no Storage Account, Power Automate flow, app registration, 
 
 The Job image is fixed to `ghcr.io/essella/somtoday2microsoftsds:latest`. The schedule runs at 02:00 and 14:00 UTC with a deterministic minute from 0 through 59. The minute is derived from the resource group and Job name. The timeout is 3,600 seconds and the retry limit is one.
 
+The release workflow refreshes `latest` every Thursday from the source of the latest published, non-prerelease GitHub Release. The application version stays unchanged, and the same image digest also receives an immutable `VERSION-refresh.RUN_NUMBER` tag. Azure Container Apps [checks for a new image whenever a container starts](https://learn.microsoft.com/azure/container-apps/managed-identity-image-pull), so each new Job execution can use the refreshed `latest` image without a Job redeployment. Use the refresh tag or digest to identify or restore one specific maintenance build.
+
 ## Microsoft Graph permissions for Job deployments
 
 Assign these Microsoft Graph application roles to every Job identity:

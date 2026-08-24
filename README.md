@@ -88,6 +88,8 @@ Bij de eerste uitvoering kan Microsoft Graph om toestemming vragen. Hiervoor heb
 
 De Job-template gebruikt het vaste image `ghcr.io/essella/somtoday2microsoftsds:latest`. Elke Job draait twee keer per dag, om 02:00 en 14:00 UTC, op een eigen minuut tussen 0 en 59.
 
+De releaseworkflow ververst `latest` iedere donderdag met de nieuwste .NET 10- en Linux-base-images. Zo'n refresh bouwt exact de broncode van de nieuwste gepubliceerde GitHub Release opnieuw en verandert het vierdelige applicatieversienummer niet. Het image krijgt daarnaast een unieke tag zoals `2026.8.24.2-refresh.123`; die tag of het digest kun je gebruiken voor controle en rollback. Azure Container Apps controleert bij iedere start of `latest` naar een nieuw image wijst, zodat een volgende Job-uitvoering de geslaagde refresh automatisch gebruikt.
+
 Microsoft Entra-replicatie kan de roltoewijzing direct na het maken van de system-assigned identity tijdelijk laten mislukken. Voer in dat geval dezelfde Job-deployment nogmaals uit.
 
 ## Configuratie en export
@@ -114,6 +116,6 @@ Een klas is exporteerbaar als de naam niet leeg is en na UUID-resolutie minstens
 
 De applicatie verwerkt persoonsgegevens. De school of Azure-partner blijft verantwoordelijk voor doelbinding, grondslag, verwerkersafspraken, toegangsbeheer, beveiliging, dataminimalisatie en AVG/GDPR. Log of bewaar nooit tokens, SAS-querystrings of productie-CSV's.
 
-Het publieke image is `ghcr.io/essella/somtoday2microsoftsds:VERSIE`, ondersteunt `linux/amd64`, draait als non-root gebruiker `1654` en bevat bij releases SBOM en provenance.
+Het publieke image is `ghcr.io/essella/somtoday2microsoftsds:VERSIE`, ondersteunt `linux/amd64`, draait als non-root gebruiker `1654` en bevat bij releases en refreshes SBOM en provenance. Een originele release gebruikt `VERSIE` en `sha-COMMIT`; een onderhoudsbuild gebruikt `VERSIE-refresh.RUN_NUMBER`. `latest` wijst naar het nieuwste geslaagde release- of refresh-image.
 
 Somtoday2MicrosoftSDS is beschikbaar onder [GNU AGPL v3 of later](LICENSE). Zie [NOTICE.md](NOTICE.md) en [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
