@@ -4,7 +4,7 @@ on:
   release:
     types: [published]
   schedule:
-    - cron: '44 4 * * 4'
+    - cron: '11 5 * * 4'
   workflow_dispatch:
 
 concurrency:
