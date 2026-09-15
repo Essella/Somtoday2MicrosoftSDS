@@ -1,0 +1,179 @@
+name: Validate Somtoday2MicrosoftSDS
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to validate. Leave empty to use the caller's commit.
+        required: false
+        type: string
+        default: ''
+      version:
+        description: Four-part version to apply during release validation.
+        required: false
+        type: string
+        default: ''
+      apply_release_version:
+        description: Apply release version properties to dotnet test.
+        required: false
+        type: boolean
+        default: false
+      run_container_smoke:
+        description: Build and smoke-test the CI container image.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Somtoday2MicrosoftSDS.sln
+
+      - name: Test
+        if: ${{ inputs.apply_release_version == false }}
+        run: dotnet test Somtoday2MicrosoftSDS.sln --configuration Release --no-restore
+
+      - name: Test release build
+        if: ${{ inputs.apply_release_version }}
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -z "$RELEASE_VERSION" ]; then
+            echo "A version is required when release version properties are enabled."
+            exit 1
+          fi
+
+          dotnet test Somtoday2MicrosoftSDS.sln \
+            --configuration Release \
+            --no-restore \
+            -p:Version="$RELEASE_VERSION" \
+            -p:AssemblyVersion="$RELEASE_VERSION" \
+            -p:FileVersion="$RELEASE_VERSION" \
+            -p:InformationalVersion="$RELEASE_VERSION" \
+            -p:ContinuousIntegrationBuild=true
+
+  infrastructure:
+    name: Validate infrastructure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Prepare latest Bicep validation
+        shell: pwsh
+        run: |
+          az bicep install
+          az bicep upgrade
+          $sourceRevision = git rev-parse HEAD
+          Write-Host "Commit: $sourceRevision"
+          az bicep version
+
+      - name: Validate Bicep, ARM, and portal form
+        shell: pwsh
+        run: ./scripts/validate-infrastructure.ps1
+
+  container-smoke:
+    name: Container smoke test
+    if: ${{ inputs.run_container_smoke }}
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve source revision
+        id: source
+        shell: bash
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build smoke-test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          pull: true
+          load: true
+          push: false
+          tags: somtoday2microsoftsds:ci
+          build-args: |
+            VERSION=0.0.0.0
+            REVISION=${{ steps.source.outputs.revision }}
+
+      - name: Verify non-root image
+        shell: bash
+        env:
+          EXPECTED_REVISION: ${{ steps.source.outputs.revision }}
+        run: |
+          test "$(docker image inspect somtoday2microsoftsds:ci --format '{{.Config.User}}')" = "1654"
+          test "$(docker image inspect somtoday2microsoftsds:ci --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "AGPL-3.0-or-later"
+          test "$(docker image inspect somtoday2microsoftsds:ci --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "0.0.0.0"
+          test "$(docker image inspect somtoday2microsoftsds:ci --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$EXPECTED_REVISION"
+          test "$(docker image inspect somtoday2microsoftsds:ci --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/Essella/Somtoday2MicrosoftSDS"
+
+      - name: Verify missing configuration fails fast
+        shell: bash
+        run: |
+          set +e
+          timeout 30s docker run --rm somtoday2microsoftsds:ci
+          status=$?
+          set -e
+          if [ "$status" -ne 1 ]; then
+            echo "Expected exit code 1 for missing Production configuration, received $status"
+            exit 1
+          fi
+
+      - name: Verify SIGTERM cancels managed-identity token acquisition
+        shell: bash
+        run: |
+          python3 -c 'import socket,time; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(("0.0.0.0",10000)); s.listen(); c,_=s.accept(); time.sleep(60)' &
+          blackhole_pid=$!
+          container_name=somtoday2microsoftsds-sigterm
+          trap 'docker rm -f "$container_name" >/dev/null 2>&1 || true; kill "$blackhole_pid" 2>/dev/null || true' EXIT
+
+          docker run --detach \
+            --name "$container_name" \
+            --add-host host.docker.internal:host-gateway \
+            --env DOTNET_ENVIRONMENT=Development \
+            --env Somtoday__ClientId=test-client \
+            --env Somtoday__ClientSecret=test-secret \
+            --env Somtoday__SchoolUUID__0=11111111-1111-1111-1111-111111111111 \
+            --env SchoolDataSync__SourceName='Container test source' \
+            --env AZURE_TOKEN_CREDENTIALS=ManagedIdentityCredential \
+            --env IDENTITY_ENDPOINT=http://host.docker.internal:10000/metadata/identity/oauth2/token \
+            --env IDENTITY_HEADER=validation-only-header \
+            somtoday2microsoftsds:ci
+
+          sleep 2
+          test "$(docker inspect "$container_name" --format '{{.State.Running}}')" = "true"
+          docker stop --time 10 "$container_name"
+          test "$(docker inspect "$container_name" --format '{{.State.ExitCode}}')" = "1"

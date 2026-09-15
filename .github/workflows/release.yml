@@ -72,71 +72,20 @@ jobs:
           "release_tag=$tag" >> $env:GITHUB_OUTPUT
           "is_refresh=$isRefresh" >> $env:GITHUB_OUTPUT
 
-  test:
-    name: Test release (${{ matrix.os }})
+  validation:
+    name: Validate release
     needs: version
-    runs-on: ${{ matrix.os }}
+    uses: ./.github/workflows/validate.yml
+    with:
+      ref: ${{ needs.version.outputs.release_tag }}
+      version: ${{ needs.version.outputs.version }}
+      apply_release_version: true
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-
-    steps:
-      - name: Checkout release tag
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.version.outputs.release_tag }}
-
-      - name: Setup .NET 10
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Restore dependencies
-        run: dotnet restore Somtoday2MicrosoftSDS.sln
-
-      - name: Test release build
-        run: >-
-          dotnet test Somtoday2MicrosoftSDS.sln
-          --configuration Release
-          --no-restore
-          -p:Version=${{ needs.version.outputs.version }}
-          -p:AssemblyVersion=${{ needs.version.outputs.version }}
-          -p:FileVersion=${{ needs.version.outputs.version }}
-          -p:InformationalVersion=${{ needs.version.outputs.version }}
-          -p:ContinuousIntegrationBuild=true
-
-  infrastructure:
-    name: Validate infrastructure
-    needs: version
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout release tag
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.version.outputs.release_tag }}
-
-      - name: Prepare latest Bicep validation
-        shell: pwsh
-        run: |
-          az bicep install
-          az bicep upgrade
-          $sourceRevision = git rev-parse HEAD
-          Write-Host "Commit: $sourceRevision"
-          az bicep version
-
-      - name: Validate Bicep, ARM, and portal form
-        shell: pwsh
-        run: ./scripts/validate-infrastructure.ps1
 
   csv-bootstrap-release:
     name: Generate and publish CSV bootstrap zips
-    needs: [version, test, infrastructure]
+    needs: [version, validation]
     if: ${{ needs.version.outputs.is_refresh == 'false' }}
     runs-on: ubuntu-latest
     permissions:
@@ -177,7 +126,7 @@ jobs:
 
   container-image:
     name: Publish container image
-    needs: [version, test, infrastructure]
+    needs: [version, validation]
     runs-on: ubuntu-latest
     permissions:
       contents: read
