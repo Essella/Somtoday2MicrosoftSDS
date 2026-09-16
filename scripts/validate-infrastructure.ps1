@@ -103,6 +103,33 @@ function Get-CanonicalJson {
     return ConvertTo-Json -InputObject $canonicalDocument -Depth 100 -Compress
 }
 
+function Assert-GeneratedArmTemplatesCurrent {
+    param(
+        [Parameter(Mandatory)]
+        [object[]]$Templates
+    )
+
+    $staleTemplates = @()
+    foreach ($template in $Templates) {
+        $generatedJson = Get-CanonicalJson -Path $template.GeneratedPath
+        $committedJson = Get-CanonicalJson -Path $template.CommittedPath
+        if ($generatedJson -cne $committedJson) {
+            $staleTemplates += $template
+        }
+    }
+
+    if ($staleTemplates.Count -eq 0) {
+        Write-Host 'Generated ARM templates match the committed files.'
+        return
+    }
+
+    $messages = foreach ($template in $staleTemplates) {
+        "- $($template.CommittedRelativePath) is stale. Compile $($template.SourceRelativePath) and commit the generated ARM template."
+    }
+
+    throw "Generated ARM template validation failed:`n$($messages -join "`n")"
+}
+
 function Assert-EnvironmentTemplate {
     param(
         [Parameter(Mandatory)]
@@ -140,12 +167,12 @@ New-Item -ItemType Directory -Path $temporaryDirectory | Out-Null
 $previousClientSecret = $env:SOMTODAY_CLIENT_SECRET
 
 try {
-    $mainTemplatePath = Join-Path $temporaryDirectory 'main.json'
-    $deploySyncJobTemplatePath = Join-Path $temporaryDirectory 'deploy-sync-job.json'
+    $mainTemplatePath = Join-Path $temporaryDirectory 'azuredeploy.json'
+    $deploySyncJobTemplatePath = Join-Path $temporaryDirectory 'azuredeploy-sync-job.json'
     $mainParametersPath = Join-Path $temporaryDirectory 'main.parameters.json'
     $deploySyncJobParametersPath = Join-Path $temporaryDirectory 'deploy-sync-job.parameters.json'
 
-    Write-Host 'Compiling Bicep templates and example parameter files.'
+    Write-Host 'Regenerating ARM templates and compiling example parameter files in a temporary directory.'
     if ($StandaloneBicep) {
         Invoke-Bicep -Arguments @('build', (Join-Path $infraRoot 'main.bicep'), '--outfile', $mainTemplatePath)
         Invoke-Bicep -Arguments @('build', (Join-Path $infraRoot 'deploy-sync-job.bicep'), '--outfile', $deploySyncJobTemplatePath)
@@ -164,6 +191,22 @@ try {
         Invoke-Bicep -Arguments @('build-params', '--file', (Join-Path $infraRoot 'main.example.bicepparam'), '--outfile', $mainParametersPath)
         Invoke-Bicep -Arguments @('build-params', '--file', (Join-Path $infraRoot 'deploy-sync-job.example.bicepparam'), '--outfile', $deploySyncJobParametersPath)
     }
+
+    Write-Host 'Comparing regenerated ARM templates with the committed files.'
+    Assert-GeneratedArmTemplatesCurrent -Templates @(
+        [pscustomobject]@{
+            GeneratedPath         = $mainTemplatePath
+            CommittedPath         = Join-Path $infraRoot 'azuredeploy.json'
+            CommittedRelativePath = 'infra/azuredeploy.json'
+            SourceRelativePath    = 'infra/main.bicep'
+        },
+        [pscustomobject]@{
+            GeneratedPath         = $deploySyncJobTemplatePath
+            CommittedPath         = Join-Path $infraRoot 'azuredeploy-sync-job.json'
+            CommittedRelativePath = 'infra/azuredeploy-sync-job.json'
+            SourceRelativePath    = 'infra/deploy-sync-job.bicep'
+        }
+    )
 
     $mainTemplate = Get-Content -LiteralPath $mainTemplatePath -Raw | ConvertFrom-Json -Depth 100
     $deploySyncJobTemplate = Get-Content -LiteralPath $deploySyncJobTemplatePath -Raw | ConvertFrom-Json -Depth 100
@@ -189,10 +232,6 @@ try {
     foreach ($requiredGraphRole in @('IndustryData-DataConnector.Read.All', 'IndustryData-DataConnector.Upload', 'IndustryData.ReadBasic.All')) {
         Assert-Condition -Condition ($assignSyncJobRolesScript.Contains($requiredGraphRole)) -Message "Required Microsoft Graph role '$requiredGraphRole' is missing from infra/assign-sync-job-roles.ps1."
     }
-
-    Write-Host 'Comparing compiled templates with the tracked ARM templates.'
-    Assert-Condition -Condition ((Get-CanonicalJson -Path $mainTemplatePath) -ceq (Get-CanonicalJson -Path (Join-Path $infraRoot 'azuredeploy.json'))) -Message 'infra/azuredeploy.json is stale. Compile infra/main.bicep and commit the generated ARM template.'
-    Assert-Condition -Condition ((Get-CanonicalJson -Path $deploySyncJobTemplatePath) -ceq (Get-CanonicalJson -Path (Join-Path $infraRoot 'azuredeploy-sync-job.json'))) -Message 'infra/azuredeploy-sync-job.json is stale. Compile infra/deploy-sync-job.bicep and commit the generated ARM template.'
 
     Write-Host 'Infrastructure validation succeeded.'
 }

@@ -92,7 +92,7 @@ jobs:
           Write-Host "Commit: $sourceRevision"
           az bicep version
 
-      - name: Validate Bicep, ARM, and portal form
+      - name: Regenerate and validate Bicep, ARM, and portal form
         shell: pwsh
         run: ./scripts/validate-infrastructure.ps1
 

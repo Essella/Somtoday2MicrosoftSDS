@@ -23,7 +23,7 @@ dotnet publish Somtoday2MicrosoftSDS/Somtoday2MicrosoftSDS.csproj --configuratio
 ./scripts/validate-infrastructure.ps1
 ```
 
-The infrastructure validation requires Azure CLI with Bicep support. It compiles the environment and `deploy-sync-job` templates with their example parameter files, checks the tag-based Environment hand-off and fixed Job settings, checks that Graph role assignment is performed by the Cloud Shell role-assignment script, and compares the generated templates with `infra/azuredeploy.json` and `infra/azuredeploy-sync-job.json`.
+The infrastructure validation requires Azure CLI with Bicep support. It regenerates the environment and `deploy-sync-job` ARM templates in a temporary directory, compiles their example parameter files, and compares canonical generated output with `infra/azuredeploy.json` and `infra/azuredeploy-sync-job.json`. It reports every stale generated file with its Bicep source and does not modify the repository. It then checks the tag-based Environment hand-off and fixed Job settings and checks that Graph role assignment is performed by the Cloud Shell role-assignment script.
 
 Transport tests use in-memory HTTP handlers and synthetic CSV content. They verify Graph endpoint composition, connector format selection, exact SAS query retention, Azure Data Lake Gen2 file create/append/flush requests, bearer-token separation, retries, validation polling, and failure boundaries without contacting Azure or SDS.
 
