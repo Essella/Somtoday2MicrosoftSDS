@@ -88,6 +88,44 @@ function ConvertTo-CanonicalValue {
     return $Value
 }
 
+function Remove-ArmTemplateGeneratorMetadata {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Template
+    )
+
+    $metadataProperty = $Template.PSObject.Properties['metadata']
+    if ($null -ne $metadataProperty -and $metadataProperty.Value -is [pscustomobject]) {
+        $metadataProperty.Value.PSObject.Properties.Remove('_generator')
+    }
+
+    $resourcesProperty = $Template.PSObject.Properties['resources']
+    if ($null -eq $resourcesProperty) {
+        return
+    }
+
+    foreach ($resource in $resourcesProperty.Value) {
+        if ($resource -isnot [pscustomobject]) {
+            continue
+        }
+
+        $typeProperty = $resource.PSObject.Properties['type']
+        if ($null -eq $typeProperty -or $typeProperty.Value -ine 'Microsoft.Resources/deployments') {
+            continue
+        }
+
+        $propertiesProperty = $resource.PSObject.Properties['properties']
+        if ($null -eq $propertiesProperty -or $propertiesProperty.Value -isnot [pscustomobject]) {
+            continue
+        }
+
+        $templateProperty = $propertiesProperty.Value.PSObject.Properties['template']
+        if ($null -ne $templateProperty -and $templateProperty.Value -is [pscustomobject]) {
+            Remove-ArmTemplateGeneratorMetadata -Template $templateProperty.Value
+        }
+    }
+}
+
 function Get-CanonicalJson {
     param(
         [Parameter(Mandatory)]
@@ -95,9 +133,7 @@ function Get-CanonicalJson {
     )
 
     $document = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -Depth 100
-    if ($null -ne $document.metadata) {
-        $document.metadata.PSObject.Properties.Remove('_generator')
-    }
+    Remove-ArmTemplateGeneratorMetadata -Template $document
 
     $canonicalDocument = ConvertTo-CanonicalValue -Value $document
     return ConvertTo-Json -InputObject $canonicalDocument -Depth 100 -Compress
