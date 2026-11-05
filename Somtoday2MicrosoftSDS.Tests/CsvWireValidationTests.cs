@@ -1,6 +1,6 @@
 using System.Reflection;
 using System.Text;
-using CsvHelper.Configuration;
+using CsvHelper;
 using Somtoday2MicrosoftSDS.Helpers;
 using Somtoday2MicrosoftSDS.Models;
 using Xunit;
@@ -118,16 +118,15 @@ public sealed class CsvWireValidationTests
 
         foreach (WireMapCase wireMap in GetWireMaps())
         {
-            ClassMap map = Assert.IsAssignableFrom<ClassMap>(Activator.CreateInstance(wireMap.MapType));
-            foreach (MemberMap memberMap in map.MemberMaps.Where(member => member.Data.Type == typeof(string)))
+            foreach (PropertyInfo property in wireMap.RecordType.GetProperties().Where(property => property.PropertyType == typeof(string) && property.IsDefined(typeof(CsvColumnAttribute))))
             {
-                if (memberMap.Data.Member is not PropertyInfo property || !property.CanWrite)
+                if (property.SetMethod == null || !property.SetMethod.IsPublic)
                 {
-                    nonWritableMappedStrings.Add($"{wireMap.FileName}:{memberMap.Data.Member.Name}");
+                    nonWritableMappedStrings.Add($"{wireMap.FileName}:{property.Name}");
                     continue;
                 }
 
-                string columnName = memberMap.Data.Names.FirstOrDefault() ?? property.Name;
+                string columnName = property.GetCustomAttribute<CsvColumnAttribute>().Name ?? property.Name;
                 foreach (string lineBreak in LineBreaks)
                 {
                     object record = Activator.CreateInstance(wireMap.RecordType);
@@ -168,85 +167,85 @@ public sealed class CsvWireValidationTests
     {
         return
         [
-            new("V1", "School.csv", typeof(School), typeof(SchoolCSVMap), record =>
+            new("V1", "School.csv", typeof(School), record =>
             {
                 SDScsvV1 csv = new();
                 csv.Schools.Add((School)record);
                 _ = new FileHelper().CreateV1Dataset(csv, includeGuardianSync: false);
             }),
-            new("V1", "Section.csv", typeof(Section), typeof(SectionCSVMap), record =>
+            new("V1", "Section.csv", typeof(Section), record =>
             {
                 SDScsvV1 csv = new();
                 csv.Sections.Add((Section)record);
                 _ = new FileHelper().CreateV1Dataset(csv, includeGuardianSync: false);
             }),
-            new("V1", "Teacher.csv", typeof(Teacher), typeof(TeacherCSVMap), record =>
+            new("V1", "Teacher.csv", typeof(Teacher), record =>
             {
                 SDScsvV1 csv = new();
                 csv.Teachers.Add((Teacher)record);
                 _ = new FileHelper().CreateV1Dataset(csv, includeGuardianSync: false);
             }),
-            new("V1", "Student.csv", typeof(Student), typeof(StudentCSVMap), record =>
+            new("V1", "Student.csv", typeof(Student), record =>
             {
                 SDScsvV1 csv = new();
                 csv.Students.Add((Student)record);
                 _ = new FileHelper().CreateV1Dataset(csv, includeGuardianSync: false);
             }),
-            new("V1", "TeacherRoster.csv", typeof(TeacherRoster), typeof(TeacherRosterCSVMap), record =>
+            new("V1", "TeacherRoster.csv", typeof(TeacherRoster), record =>
             {
                 SDScsvV1 csv = new();
                 csv.TeacherRosters.Add((TeacherRoster)record);
                 _ = new FileHelper().CreateV1Dataset(csv, includeGuardianSync: false);
             }),
-            new("V1", "StudentEnrollment.csv", typeof(StudentEnrollment), typeof(StudentEnrollmentCSVMap), record =>
+            new("V1", "StudentEnrollment.csv", typeof(StudentEnrollment), record =>
             {
                 SDScsvV1 csv = new();
                 csv.StudentEnrollments.Add((StudentEnrollment)record);
                 _ = new FileHelper().CreateV1Dataset(csv, includeGuardianSync: false);
             }),
-            new("V1", "User.csv", typeof(Guardian), typeof(GuardianCSVMap), record =>
+            new("V1", "User.csv", typeof(Guardian), record =>
             {
                 SDScsvV1 csv = new();
                 csv.User.Add((Guardian)record);
                 _ = new FileHelper().CreateV1Dataset(csv, includeGuardianSync: true);
             }),
-            new("V1", "Guardianrelationship.csv", typeof(GuardianRelationship), typeof(GuardianRelationshipCSVMap), record =>
+            new("V1", "Guardianrelationship.csv", typeof(GuardianRelationship), record =>
             {
                 SDScsvV1 csv = new();
                 csv.Guardianrelationship.Add((GuardianRelationship)record);
                 _ = new FileHelper().CreateV1Dataset(csv, includeGuardianSync: true);
             }),
-            new("V2.1", "orgs.csv", typeof(Orgs), typeof(OrgsClassMap), record =>
+            new("V2.1", "orgs.csv", typeof(Orgs), record =>
             {
                 SDScsvV2 csv = new();
                 csv.Orgs.Add((Orgs)record);
                 _ = new FileHelper().CreateV2Dataset(csv, includeGuardianSync: false);
             }),
-            new("V2.1", "users.csv", typeof(Users), typeof(UsersClassMap), record =>
+            new("V2.1", "users.csv", typeof(Users), record =>
             {
                 SDScsvV2 csv = new();
                 csv.Users.Add((Users)record);
                 _ = new FileHelper().CreateV2Dataset(csv, includeGuardianSync: false);
             }),
-            new("V2.1", "roles.csv", typeof(Roles), typeof(RolesClassMap), record =>
+            new("V2.1", "roles.csv", typeof(Roles), record =>
             {
                 SDScsvV2 csv = new();
                 csv.Roles.Add((Roles)record);
                 _ = new FileHelper().CreateV2Dataset(csv, includeGuardianSync: false);
             }),
-            new("V2.1", "classes.csv", typeof(Classes), typeof(ClassesClassMap), record =>
+            new("V2.1", "classes.csv", typeof(Classes), record =>
             {
                 SDScsvV2 csv = new();
                 csv.Classes.Add((Classes)record);
                 _ = new FileHelper().CreateV2Dataset(csv, includeGuardianSync: false);
             }),
-            new("V2.1", "enrollments.csv", typeof(Enrollments), typeof(EnrollmentsClassMap), record =>
+            new("V2.1", "enrollments.csv", typeof(Enrollments), record =>
             {
                 SDScsvV2 csv = new();
                 csv.Enrollments.Add((Enrollments)record);
                 _ = new FileHelper().CreateV2Dataset(csv, includeGuardianSync: false);
             }),
-            new("V2.1", "relationships.csv", typeof(Relationships), typeof(RelationshipsClassMap), record =>
+            new("V2.1", "relationships.csv", typeof(Relationships), record =>
             {
                 SDScsvV2 csv = new();
                 csv.Relationships.Add((Relationships)record);
@@ -259,6 +258,5 @@ public sealed class CsvWireValidationTests
         string SdsVersion,
         string FileName,
         Type RecordType,
-        Type MapType,
         Action<object> Serialize);
 }
