@@ -24,7 +24,7 @@ RUN dotnet publish "Somtoday2MicrosoftSDS/Somtoday2MicrosoftSDS.csproj" \
     -p:InformationalVersion="$VERSION" \
     -p:ContinuousIntegrationBuild=true
 
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
+FROM mcr.microsoft.com/dotnet/runtime:11.0 AS final
 ARG VERSION
 ARG REVISION
 
